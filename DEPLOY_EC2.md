@@ -144,8 +144,17 @@ Pull the models before starting the full stack so the AI services find them read
 
 ```bash
 docker model pull ai/mxbai-embed-large
-docker model pull ai/gpt-oss
+docker model pull ai/mistral
 ```
+
+> **Model choice on g4dn.xlarge (T4, 15 GB VRAM):** `ai/gpt-oss` is a ~13 GB reasoning model that leaves almost no headroom alongside the embedding model (~0.7 GB). On a T4 this causes the model runner to evict one model when the other is needed, adding a 3–5 minute cold-start penalty to every RAG query. `ai/mistral` (7B Q4, ~4 GB) fits comfortably alongside the embedding model and delivers ~40 tokens/sec on the T4 after the first load (~50 s warm-up).
+>
+> To use `ai/gpt-oss` without cold-start eviction you need at least a **g5.xlarge** (NVIDIA A10G, 24 GB VRAM), which gives both models room to stay resident simultaneously. Pull and set accordingly:
+> ```bash
+> docker model pull ai/gpt-oss
+> # In .env.local:
+> LLM_MODEL=ai/gpt-oss
+> ```
 
 ---
 
@@ -182,7 +191,7 @@ MODEL_RUNNER_URL=http://host.docker.internal:12434
 EOF
 ```
 
-> `EMBEDDING_MODEL` and `LLM_MODEL` are unchanged — `ai/mxbai-embed-large` and `ai/gpt-oss` are the same model names on Linux as on Docker Desktop.
+> `EMBEDDING_MODEL` is unchanged. `LLM_MODEL` defaults to `ai/mistral` on g4dn.xlarge — see the note in step 6 for model choice guidance.
 
 ---
 
