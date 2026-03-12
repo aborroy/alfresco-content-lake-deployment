@@ -12,7 +12,7 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 #     can find MAVEN_USERNAME, MAVEN_PASSWORD, NEXUS_* and HXPR_GIT_AUTH_TOKEN.
 ifneq (,$(wildcard .env.local))
   ENV_ARGS  := --env-file .env.local
-  LOAD_ENV  := set -a && . .env.local && set +a &&
+  LOAD_ENV  := set -a && . ./.env.local && set +a &&
 else
   ENV_ARGS  :=
   LOAD_ENV  :=
