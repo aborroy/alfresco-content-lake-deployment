@@ -30,8 +30,6 @@ In the AWS Console (or CLI), launch an instance with these settings:
 ssh -i /path/to/your-key.pem ubuntu@<EC2_PUBLIC_IP>
 ```
 
----
-
 ## 3. Prepare the OS
 
 Update packages and add swap space. The stack is RAM-intensive during startup; 8 GB of swap prevents OOM kills while services are initialising.
