@@ -4,8 +4,6 @@ This guide covers deploying the full stack on a **g4dn.xlarge** (4 vCPU / 16 GB 
 
 The same Docker Model Runner used on Docker Desktop is also available on Linux via the `docker-model-plugin` package, keeping deployment assets and make commands identical across environments. On a GPU instance, Docker Model Runner automatically uses the T4 for inference, giving dramatically faster embedding and LLM response times compared to CPU-only instances. The only Linux-specific difference is setting `MODEL_RUNNER_URL` to `http://host.docker.internal:12434` in `.env.local` — the port Docker Model Runner binds to on Linux. The `host.docker.internal:host-gateway` mapping is already embedded in `compose.rag.yaml` so no extra compose file is needed.
 
----
-
 ## 1. Launch the EC2 Instance
 
 In the AWS Console (or CLI), launch an instance with these settings:
@@ -23,11 +21,8 @@ In the AWS Console (or CLI), launch an instance with these settings:
 |---|---|---|---|
 | 22 | TCP | Your IP | SSH |
 | 8080 | TCP | Your IP | Alfresco proxy |
-| 5601 | TCP | Your IP | OpenSearch Dashboards |
 
 > Restrict sources to your IP for a testing environment. Avoid `0.0.0.0/0` unless strictly necessary.
-
----
 
 ## 2. Connect to the Instance
 
@@ -51,8 +46,6 @@ sudo mkswap /swapfile
 sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
-
----
 
 ## 4. Install NVIDIA Drivers and Container Toolkit
 
@@ -97,8 +90,6 @@ sudo apt-get update
 sudo apt-get install -y nvidia-container-toolkit
 ```
 
----
-
 ## 5. Install Docker Engine
 
 ```bash
@@ -136,8 +127,6 @@ docker compose version
 docker model version
 ```
 
----
-
 ## 6. Pull the AI Models
 
 Pull the models before starting the full stack so the AI services find them ready on first startup. Docker Model Runner will use the T4 GPU automatically.
@@ -156,16 +145,12 @@ docker model pull ai/mistral
 > LLM_MODEL=ai/gpt-oss
 > ```
 
----
-
 ## 7. Clone the Repository
 
 ```bash
 git clone https://github.com/aborroy/alfresco-content-lake-deployment.git
 cd alfresco-content-lake-deployment
 ```
-
----
 
 ## 8. Authenticate to Container Registries
 
@@ -174,8 +159,6 @@ The HXPR images are hosted on `ghcr.io`.
 ```bash
 docker login ghcr.io
 ```
-
----
 
 ## 9. Create `.env.local`
 
@@ -193,8 +176,6 @@ EOF
 
 > `EMBEDDING_MODEL` is unchanged. `LLM_MODEL` defaults to `ai/mistral` on g4dn.xlarge — see the note in step 6 for model choice guidance.
 
----
-
 ## 10. Export Build Credentials
 
 These are required to build the HXPR image. Export them in your shell before starting the stack.
@@ -211,8 +192,6 @@ export HXPR_GIT_AUTH_TOKEN=<github-pat-with-repo-read>
 
 See the [Getting Credentials](README.md#getting-credentials) section in the main README for details on obtaining each credential.
 
----
-
 ## 11. Build and Start the Stack
 
 The initial build compiles several Java projects from source; it will take several minutes.
@@ -220,8 +199,6 @@ The initial build compiles several Java projects from source; it will take sever
 ```bash
 make up
 ```
-
----
 
 ## 12. Monitor Startup
 
@@ -237,8 +214,6 @@ make logs
 
 `hxpr-app` has a 120-second start period; expect the stack to take 3–5 minutes to fully stabilise.
 
----
-
 ## 13. Public Endpoints
 
 Replace `<EC2_PUBLIC_IP>` with your instance's IP or DNS name.
@@ -248,14 +223,8 @@ Replace `<EC2_PUBLIC_IP>` with your instance's IP or DNS name.
 | `http://<EC2_PUBLIC_IP>:8080/` | Content Lake UI |
 | `http://<EC2_PUBLIC_IP>:8080/alfresco/` | Alfresco Repository |
 | `http://<EC2_PUBLIC_IP>:8080/share/` | Alfresco Share |
-| `http://<EC2_PUBLIC_IP>:8080/admin` | Alfresco Control Center |
-| `http://<EC2_PUBLIC_IP>:8080/api-explorer/` | API Explorer |
+| `http://<EC2_PUBLIC_IP>:8080/admin/` | Alfresco Control Center |
 | `http://<EC2_PUBLIC_IP>:8080/api/rag/` | RAG Service |
-| `http://<EC2_PUBLIC_IP>:5601/` | OpenSearch Dashboards |
-
-Default Alfresco credentials: `admin` / `admin`.
-
----
 
 ## 14. Day-to-Day Commands
 
@@ -264,18 +233,10 @@ make down     # stop and remove containers (preserves volumes)
 make up       # start again (images already built, skips rebuild)
 make logs     # tail all logs
 make ps       # show service status
-make clean    # ⚠️  remove containers AND all volumes (destructive)
+make clean    # remove containers AND all volumes (destructive)
 ```
-
----
 
 ## 15. Saving Costs
 
-- **Stop the EC2 instance** when not in use — you are only charged for storage while stopped (~$0.10/GB/month for gp3).
-- **EBS volumes persist** across instance stops, so Alfresco data, Solr index, MongoDB, and pulled model weights are all retained.
-- Use an **Elastic IP** if you stop/start frequently, otherwise the public IP changes each time and you will need to update `SERVER_NAME` in `.env.local`.
-
-```bash
-# Assign a static Elastic IP in the AWS Console, then update .env.local:
-SERVER_NAME=<ELASTIC_IP>
-```
+- Stop the EC2 instance when not in use — you are only charged for storage while stopped (~$0.10/GB/month for gp3).
+- EBS volumes persist across instance stops, so Alfresco data, Solr index, MongoDB, and pulled model weights are all retained.
