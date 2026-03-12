@@ -249,3 +249,72 @@ make clean    # remove containers AND all volumes (destructive)
 
 - Stop the EC2 instance when not in use — you are only charged for storage while stopped (~$0.10/GB/month for gp3).
 - EBS volumes persist across instance stops, so Alfresco data, Solr index, MongoDB, and pulled model weights are all retained.
+
+## 16. Upgrading to g5.xlarge (NVIDIA A10G, 24 GB VRAM)
+
+The **g5.xlarge** provides an NVIDIA A10G GPU with 24 GB VRAM, which allows `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) to reside in VRAM simultaneously — eliminating the 3–5 minute cold-start eviction penalty present on the T4.
+
+**Cost difference (us-east-1, on-demand):** ~$0.48/hr more than g4dn.xlarge ($1.006 vs $0.526).
+
+### Option A — Stop and resize an existing instance (recommended)
+
+This preserves all EBS data (Alfresco content, Solr index, MongoDB, pulled model weights).
+
+```bash
+# 1. Retrieve your instance ID
+INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=<your-instance-name>" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text)
+
+# 2. Stop the instance
+aws ec2 stop-instances --instance-ids $INSTANCE_ID
+aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID
+
+# 3. Change the instance type
+aws ec2 modify-instance-attribute \
+  --instance-id $INSTANCE_ID \
+  --instance-type '{"Value": "g5.xlarge"}'
+
+# 4. Start the instance
+aws ec2 start-instances --instance-ids $INSTANCE_ID
+aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+
+# 5. Get the new public IP (it changes on restart unless you use an Elastic IP)
+aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --query "Reservations[0].Instances[0].PublicIpAddress" \
+  --output text
+```
+
+> If you have an Elastic IP attached to the instance, the address is preserved across the stop/start.
+
+### Option B — Launch a fresh g5.xlarge instance
+
+Follow the full deployment guide from step 1, selecting `g5.xlarge` as the instance type. The NVIDIA driver version (`nvidia-driver-535`) and all other steps are identical — the A10G is supported by the same driver series.
+
+### After the resize — enable gpt-oss
+
+Once the instance is running on g5.xlarge, pull the model and update your `.env.local`:
+
+```bash
+# Pull gpt-oss (this will take a few minutes; the model is ~13 GB)
+docker model pull ai/gpt-oss
+
+# Update .env.local to use gpt-oss
+cat >> .env.local << 'EOF'
+LLM_MODEL=ai/gpt-oss
+EOF
+
+# Restart the RAG service to pick up the new model
+docker compose restart rag-service
+```
+
+Verify the model is resident in VRAM (both models should show simultaneously):
+
+```bash
+nvidia-smi
+docker model ls
+```
+
+With 24 GB VRAM, `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) leave ~10 GB headroom — no evictions, no cold starts.
