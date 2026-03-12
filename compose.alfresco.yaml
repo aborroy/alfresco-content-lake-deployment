@@ -144,6 +144,17 @@ services:
     networks:
       - stack
 
+  control-center:
+    image: quay.io/alfresco/alfresco-control-center:${CONTROL_CENTER_TAG:-10.2.0}
+    environment:
+      APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
+      BASE_PATH: /admin
+    depends_on:
+      alfresco:
+        condition: service_healthy
+    networks:
+      - stack
+
   proxy:
     image: nginx:stable-alpine
     ports:
@@ -157,6 +168,7 @@ services:
       - alfresco
       - share
       - content-app
+      - control-center
       - solr6
       - rag-service
       - batch-ingester
