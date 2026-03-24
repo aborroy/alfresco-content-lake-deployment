@@ -43,16 +43,23 @@ flowchart LR
     ContentApp["content-app"]
     Batch["batch-ingester"]
     Live["live-ingester"]
+    NuxeoBatch["nuxeo-batch-ingester"]
     Rag["rag-service"]
   end
 
   subgraph ACS["Alfresco"]
     Alfresco["alfresco"]
     Share["share"]
+    ControlCenter["control-center"]
     Solr["solr6"]
     Postgres["postgres"]
     ActiveMQ["activemq"]
     Transform["transform-core-aio"]
+  end
+
+  subgraph NUXEO["Nuxeo"]
+    Nuxeo["nuxeo"]
+    NuxeoDb["nuxeo-db"]
   end
 
   subgraph HXPR["hxpr"]
@@ -68,20 +75,26 @@ flowchart LR
   end
 
   Browser --> Proxy
-  
+
   Proxy --> ContentApp
   Proxy --> Alfresco
   Proxy --> Share
+  Proxy --> ControlCenter
   Proxy --> Batch
+  Proxy --> NuxeoBatch
+  Proxy --> Nuxeo
   Proxy --> Rag
 
   ContentApp --> Alfresco
   Share --> Alfresco
+  ControlCenter --> Alfresco
   Alfresco --> Postgres
   Alfresco --> Solr
   Alfresco --> ActiveMQ
   Alfresco --> Transform
   Solr --> Alfresco
+
+  Nuxeo --> NuxeoDb
 
   Batch --> Alfresco
   Batch --> Transform
@@ -95,6 +108,11 @@ flowchart LR
   Live --> Idp
   Live --> HxprApp
   Live -.-> ModelRunner
+
+  NuxeoBatch --> Nuxeo
+  NuxeoBatch --> Idp
+  NuxeoBatch --> HxprApp
+  NuxeoBatch -.-> ModelRunner
 
   Rag --> Alfresco
   Rag --> Idp
@@ -119,7 +137,7 @@ flowchart LR
 
 Notes:
 
-- `proxy` is the only public entrypoint for Alfresco, Share, the UI, batch APIs, and RAG APIs.
+- `proxy` is the only public entrypoint for Alfresco, Share, the UI, Nuxeo Web UI, batch/sync APIs, and RAG APIs.
 - `opensearch-dashboards` is published separately on port `5601`, not through `proxy`.
 - Docker Model Runner is an external dependency used by the Content Lake services, not a Compose service in this repository.
 
