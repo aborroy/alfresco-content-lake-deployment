@@ -20,8 +20,8 @@ docker compose up --build
 ```
 
 `nuxeo-deployment` must be cloned as a sibling directory (at `../nuxeo-deployment` relative to this
-repo) because `compose.nuxeo.yaml` uses it as the Docker build context for the Nuxeo service.  No
-other sibling checkout (`alfresco/`, `hxpr/`, `alfresco-content-lake/`, or ACA) is required.
+repo) and started separately. This repo no longer owns the Nuxeo server itself. No other sibling
+checkout (`alfresco/`, `hxpr/`, `alfresco-content-lake/`, or ACA) is required.
 
 ## Compose Layout
 
@@ -47,6 +47,7 @@ flowchart LR
     Batch["batch-ingester"]
     Live["live-ingester"]
     NuxeoBatch["nuxeo-batch-ingester"]
+    NuxeoLive["nuxeo-live-ingester"]
     Rag["rag-service"]
   end
 
@@ -116,6 +117,11 @@ flowchart LR
   NuxeoBatch --> Idp
   NuxeoBatch --> HxprApp
   NuxeoBatch -.-> ModelRunner
+
+  NuxeoLive --> Nuxeo
+  NuxeoLive --> Idp
+  NuxeoLive --> HxprApp
+  NuxeoLive -.-> ModelRunner
 
   Rag --> Alfresco
   Rag --> Idp
@@ -248,8 +254,8 @@ Use the following values:
    git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
    ```
 
-   `compose.nuxeo.yaml` references `../nuxeo-deployment` as the Docker build context for the Nuxeo
-   service.  The build will fail if that directory is absent.
+   Start `../nuxeo-deployment` before bringing up this stack. The Content Lake deployment expects
+   Nuxeo to be reachable at `http://host.docker.internal:8081/nuxeo`.
 
 2. Authenticate to GitHub Container Registry:
 

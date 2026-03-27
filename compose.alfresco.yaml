@@ -166,13 +166,14 @@ services:
         protocol: tcp
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - alfresco
       - share
       - content-app
       - control-center
       - solr6
-      - nuxeo
       - rag-service
       - batch-ingester
       - nuxeo-batch-ingester

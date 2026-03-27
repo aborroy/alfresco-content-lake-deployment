@@ -17,9 +17,6 @@ volumes:
   mongodb-data:
   localstack-data:
   shared-file-store:
-  nuxeo-db-data:
-  nuxeo-data:
-  nuxeo-config:
 
 secrets:
   hxpr_git_auth_token:
