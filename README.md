@@ -1,4 +1,4 @@
-# Alfresco Content Lake Deploy
+# Content Lake App Deployment
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docs.docker.com/compose/)
 [![Status](https://img.shields.io/badge/Status-PoC-yellow.svg)]()
 
-Self-contained deployment for Alfresco Content Lake.
+Self-contained deployment for Content Lake App — ingests content from Alfresco and Nuxeo into hxpr for hybrid semantic search and RAG.
 
 The target workflow is:
 
@@ -187,7 +187,7 @@ These are the GitHub projects directly used by this deployment:
 
 - [`aborroy/content-lake-app`](https://github.com/aborroy/content-lake-app)
   Used as the remote BuildKit context for:
-  `batch-ingester`, `live-ingester`, `rag-service`, and the `content-lake-repo-model` JAR injected into the Alfresco repository image.
+  `batch-ingester`, `live-ingester`, `nuxeo-batch-ingester`, `nuxeo-live-ingester`, `rag-service`, and the `content-lake-repo-model` JAR injected into the Alfresco repository image.
 
 - [`aborroy/alfresco-content-lake-ui`](https://github.com/aborroy/alfresco-content-lake-ui)
   Used as the remote BuildKit context for the `content-app` UI image.
