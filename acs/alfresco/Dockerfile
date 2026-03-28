@@ -8,7 +8,7 @@ ARG ALFRESCO_TAG
 ############################################
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS model-build
 
-ARG CONTENT_LAKE_GIT_CONTEXT=https://github.com/aborroy/alfresco-content-lake.git#main
+ARG CONTENT_LAKE_GIT_CONTEXT=https://github.com/aborroy/content-lake-app.git#main
 
 RUN apk add --no-cache git
 

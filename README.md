@@ -12,16 +12,16 @@ Self-contained deployment for Alfresco Content Lake.
 The target workflow is:
 
 ```bash
-git clone https://github.com/aborroy/alfresco-content-lake-deployment.git
+git clone https://github.com/aborroy/content-lake-app-deployment.git
 git clone https://github.com/aborroy/nuxeo-deployment.git   # required sibling
-cd alfresco-content-lake-deployment
+cd content-lake-app-deployment
 docker login ghcr.io
 docker compose up --build
 ```
 
 `nuxeo-deployment` must be cloned as a sibling directory (at `../nuxeo-deployment` relative to this
 repo) and started separately. This repo no longer owns the Nuxeo server itself. No other sibling
-checkout (`alfresco/`, `hxpr/`, `alfresco-content-lake/`, or ACA) is required.
+checkout (`alfresco/`, `hxpr/`, `content-lake-app/`, or ACA) is required.
 
 ## Compose Layout
 
@@ -41,7 +41,7 @@ flowchart LR
   Browser["Browser"]
   ModelRunner["Docker Model Runner"]
 
-  subgraph ACL["alfresco-content-lake"]
+  subgraph ACL["content-lake-app"]
     Proxy["proxy"]
     ContentApp["content-app"]
     Batch["batch-ingester"]
@@ -168,7 +168,7 @@ This repo now vendors the required ACS module/config pieces locally and builds t
 - Vendored HXPR bootstrap assets under `hxpr/`
 - Local HXPR Docker build that clones and compiles the requested HXPR branch
 - Remote builds for:
-  - `aborroy/alfresco-content-lake`
+  - `aborroy/content-lake-app`
   - `aborroy/alfresco-content-lake-ui`
 - Docker Compose orchestration for the full stack
 - A split Compose structure using the `include` directive
@@ -182,10 +182,10 @@ These are the GitHub projects directly used by this deployment:
   `docker compose up --build`.  Provides the `Dockerfile` and scripts used to build the Nuxeo
   service image (`nuxeo-deployment:nuxeo-local`) from the public `nuxeo/nuxeo` source tree.
 
-- [`aborroy/alfresco-content-lake-deployment`](https://github.com/aborroy/alfresco-content-lake-deployment)
+- [`aborroy/content-lake-app-deployment`](https://github.com/aborroy/content-lake-app-deployment)
   This repository. It contains the Compose files, ACS customization, HXPR build wrapper, proxy config, and deployment documentation.
 
-- [`aborroy/alfresco-content-lake`](https://github.com/aborroy/alfresco-content-lake)
+- [`aborroy/content-lake-app`](https://github.com/aborroy/content-lake-app)
   Used as the remote BuildKit context for:
   `batch-ingester`, `live-ingester`, `rag-service`, and the `content-lake-repo-model` JAR injected into the Alfresco repository image.
 
@@ -353,7 +353,7 @@ The most important overrides are:
 - `HXPR_GIT_REF` — defaults to `feature/CIN-1509-CreateEmbeddingAPI`.
 - `HXPR_GIT_SHA` — pin to a specific commit SHA for reproducible builds (empty by default).
 - `HXPR_LOCAL_IMAGE` — local image tag used for the built HXPR app.
-- `CONTENT_LAKE_GIT_CONTEXT` — defaults to `https://github.com/aborroy/alfresco-content-lake.git#main`.
+- `CONTENT_LAKE_GIT_CONTEXT` — defaults to `https://github.com/aborroy/content-lake-app.git#main`.
 - `CONTENT_LAKE_UI_GIT_CONTEXT` — defaults to `https://github.com/aborroy/alfresco-content-lake-ui.git#main`.
 - `ACA_TAG` — defaults to `7.3.0`.
 - `PUBLIC_PORT` — defaults to `80`.

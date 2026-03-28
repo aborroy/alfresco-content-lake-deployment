@@ -1,4 +1,4 @@
-name: alfresco-content-lake
+name: content-lake-app
 
 include:
   - ./compose.alfresco.yaml

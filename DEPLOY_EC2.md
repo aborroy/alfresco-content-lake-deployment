@@ -157,8 +157,8 @@ docker model pull ai/qwen2.5
 ## 7. Clone the Repository
 
 ```bash
-git clone https://github.com/aborroy/alfresco-content-lake-deployment.git
-cd alfresco-content-lake-deployment
+git clone https://github.com/aborroy/content-lake-app-deployment.git
+cd content-lake-app-deployment
 ```
 
 ## 8. Authenticate to Container Registries

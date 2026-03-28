@@ -1,34 +1,35 @@
 services:
   batch-ingester:
     build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake.git#main}"
+      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
         # syntax=docker/dockerfile:1.7
         FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
         WORKDIR /workspace
         COPY pom.xml .
-        COPY content-lake-spi/pom.xml content-lake-spi/pom.xml
-        COPY content-lake-core/pom.xml content-lake-core/pom.xml
-        COPY content-lake-source-alfresco/pom.xml content-lake-source-alfresco/pom.xml
-        COPY content-lake-source-nuxeo/pom.xml content-lake-source-nuxeo/pom.xml
-        COPY content-lake-repo-model/pom.xml content-lake-repo-model/pom.xml
-        COPY alfresco-batch-ingester/pom.xml alfresco-batch-ingester/pom.xml
-        COPY nuxeo-batch-ingester/pom.xml nuxeo-batch-ingester/pom.xml
-        COPY alfresco-live-ingester/pom.xml alfresco-live-ingester/pom.xml
-        COPY nuxeo-live-ingester/pom.xml nuxeo-live-ingester/pom.xml
-        COPY rag-service/pom.xml rag-service/pom.xml
+        COPY common/pom.xml common/pom.xml
+        COPY alfresco/pom.xml alfresco/pom.xml
+        COPY nuxeo/pom.xml nuxeo/pom.xml
+        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
+        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
+        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
+        COPY common/rag-service/pom.xml common/rag-service/pom.xml
+        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
+        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
+        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
+        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
+        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
+        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl alfresco-batch-ingester -am dependency:go-offline
-        COPY content-lake-spi/src content-lake-spi/src
-        COPY content-lake-core/src content-lake-core/src
-        COPY content-lake-source-alfresco/src content-lake-source-alfresco/src
-        COPY content-lake-source-nuxeo/src content-lake-source-nuxeo/src
-        COPY alfresco-batch-ingester/src alfresco-batch-ingester/src
-        COPY nuxeo-live-ingester/src nuxeo-live-ingester/src
+            mvn -q -DskipTests -pl alfresco/alfresco-batch-ingester -am dependency:go-offline
+        COPY common/content-lake-spi/src common/content-lake-spi/src
+        COPY common/content-lake-core/src common/content-lake-core/src
+        COPY alfresco/content-lake-source-alfresco/src alfresco/content-lake-source-alfresco/src
+        COPY alfresco/alfresco-batch-ingester/src alfresco/alfresco-batch-ingester/src
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl alfresco-batch-ingester -am package
+            mvn -q -DskipTests -pl alfresco/alfresco-batch-ingester -am package
         RUN mkdir -p /layers \
-         && JAR="$$(ls -1 alfresco-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
+         && JAR="$$(ls -1 alfresco/alfresco-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
@@ -71,34 +72,35 @@ services:
 
   live-ingester:
     build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake.git#main}"
+      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
         # syntax=docker/dockerfile:1.7
         FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
         WORKDIR /workspace
         COPY pom.xml .
-        COPY content-lake-spi/pom.xml content-lake-spi/pom.xml
-        COPY content-lake-core/pom.xml content-lake-core/pom.xml
-        COPY content-lake-source-alfresco/pom.xml content-lake-source-alfresco/pom.xml
-        COPY content-lake-source-nuxeo/pom.xml content-lake-source-nuxeo/pom.xml
-        COPY content-lake-repo-model/pom.xml content-lake-repo-model/pom.xml
-        COPY alfresco-batch-ingester/pom.xml alfresco-batch-ingester/pom.xml
-        COPY nuxeo-batch-ingester/pom.xml nuxeo-batch-ingester/pom.xml
-        COPY alfresco-live-ingester/pom.xml alfresco-live-ingester/pom.xml
-        COPY nuxeo-live-ingester/pom.xml nuxeo-live-ingester/pom.xml
-        COPY rag-service/pom.xml rag-service/pom.xml
+        COPY common/pom.xml common/pom.xml
+        COPY alfresco/pom.xml alfresco/pom.xml
+        COPY nuxeo/pom.xml nuxeo/pom.xml
+        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
+        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
+        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
+        COPY common/rag-service/pom.xml common/rag-service/pom.xml
+        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
+        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
+        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
+        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
+        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
+        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl alfresco-live-ingester -am dependency:go-offline
-        COPY content-lake-spi/src content-lake-spi/src
-        COPY content-lake-core/src content-lake-core/src
-        COPY content-lake-source-alfresco/src content-lake-source-alfresco/src
-        COPY content-lake-source-nuxeo/src content-lake-source-nuxeo/src
-        COPY alfresco-live-ingester/src alfresco-live-ingester/src
-        COPY nuxeo-live-ingester/src nuxeo-live-ingester/src
+            mvn -q -DskipTests -pl alfresco/alfresco-live-ingester -am dependency:go-offline
+        COPY common/content-lake-spi/src common/content-lake-spi/src
+        COPY common/content-lake-core/src common/content-lake-core/src
+        COPY alfresco/content-lake-source-alfresco/src alfresco/content-lake-source-alfresco/src
+        COPY alfresco/alfresco-live-ingester/src alfresco/alfresco-live-ingester/src
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl alfresco-live-ingester -am package
+            mvn -q -DskipTests -pl alfresco/alfresco-live-ingester -am package
         RUN mkdir -p /layers \
-         && JAR="$$(ls -1 alfresco-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
+         && JAR="$$(ls -1 alfresco/alfresco-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
@@ -146,33 +148,35 @@ services:
 
   nuxeo-batch-ingester:
     build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake.git#main}"
+      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
         # syntax=docker/dockerfile:1.7
         FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
         WORKDIR /workspace
         COPY pom.xml .
-        COPY content-lake-spi/pom.xml content-lake-spi/pom.xml
-        COPY content-lake-core/pom.xml content-lake-core/pom.xml
-        COPY content-lake-source-alfresco/pom.xml content-lake-source-alfresco/pom.xml
-        COPY content-lake-source-nuxeo/pom.xml content-lake-source-nuxeo/pom.xml
-        COPY content-lake-repo-model/pom.xml content-lake-repo-model/pom.xml
-        COPY alfresco-batch-ingester/pom.xml alfresco-batch-ingester/pom.xml
-        COPY nuxeo-batch-ingester/pom.xml nuxeo-batch-ingester/pom.xml
-        COPY alfresco-live-ingester/pom.xml alfresco-live-ingester/pom.xml
-        COPY nuxeo-live-ingester/pom.xml nuxeo-live-ingester/pom.xml
-        COPY rag-service/pom.xml rag-service/pom.xml
+        COPY common/pom.xml common/pom.xml
+        COPY alfresco/pom.xml alfresco/pom.xml
+        COPY nuxeo/pom.xml nuxeo/pom.xml
+        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
+        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
+        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
+        COPY common/rag-service/pom.xml common/rag-service/pom.xml
+        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
+        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
+        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
+        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
+        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
+        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo-batch-ingester -am dependency:go-offline
-        COPY content-lake-spi/src content-lake-spi/src
-        COPY content-lake-core/src content-lake-core/src
-        COPY content-lake-source-nuxeo/src content-lake-source-nuxeo/src
-        COPY nuxeo-batch-ingester/src nuxeo-batch-ingester/src
-        COPY nuxeo-live-ingester/src nuxeo-live-ingester/src
+            mvn -q -DskipTests -pl nuxeo/nuxeo-batch-ingester -am dependency:go-offline
+        COPY common/content-lake-spi/src common/content-lake-spi/src
+        COPY common/content-lake-core/src common/content-lake-core/src
+        COPY nuxeo/content-lake-source-nuxeo/src nuxeo/content-lake-source-nuxeo/src
+        COPY nuxeo/nuxeo-batch-ingester/src nuxeo/nuxeo-batch-ingester/src
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo-batch-ingester -am package
+            mvn -q -DskipTests -pl nuxeo/nuxeo-batch-ingester -am package
         RUN mkdir -p /layers \
-         && JAR="$$(ls -1 nuxeo-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
+         && JAR="$$(ls -1 nuxeo/nuxeo-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
@@ -214,32 +218,35 @@ services:
 
   nuxeo-live-ingester:
     build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake.git#main}"
+      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
         # syntax=docker/dockerfile:1.7
         FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
         WORKDIR /workspace
         COPY pom.xml .
-        COPY content-lake-spi/pom.xml content-lake-spi/pom.xml
-        COPY content-lake-core/pom.xml content-lake-core/pom.xml
-        COPY content-lake-source-alfresco/pom.xml content-lake-source-alfresco/pom.xml
-        COPY content-lake-source-nuxeo/pom.xml content-lake-source-nuxeo/pom.xml
-        COPY content-lake-repo-model/pom.xml content-lake-repo-model/pom.xml
-        COPY alfresco-batch-ingester/pom.xml alfresco-batch-ingester/pom.xml
-        COPY nuxeo-batch-ingester/pom.xml nuxeo-batch-ingester/pom.xml
-        COPY alfresco-live-ingester/pom.xml alfresco-live-ingester/pom.xml
-        COPY nuxeo-live-ingester/pom.xml nuxeo-live-ingester/pom.xml
-        COPY rag-service/pom.xml rag-service/pom.xml
+        COPY common/pom.xml common/pom.xml
+        COPY alfresco/pom.xml alfresco/pom.xml
+        COPY nuxeo/pom.xml nuxeo/pom.xml
+        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
+        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
+        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
+        COPY common/rag-service/pom.xml common/rag-service/pom.xml
+        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
+        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
+        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
+        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
+        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
+        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo-live-ingester -am dependency:go-offline
-        COPY content-lake-spi/src content-lake-spi/src
-        COPY content-lake-core/src content-lake-core/src
-        COPY content-lake-source-nuxeo/src content-lake-source-nuxeo/src
-        COPY nuxeo-live-ingester/src nuxeo-live-ingester/src
+            mvn -q -DskipTests -pl nuxeo/nuxeo-live-ingester -am dependency:go-offline
+        COPY common/content-lake-spi/src common/content-lake-spi/src
+        COPY common/content-lake-core/src common/content-lake-core/src
+        COPY nuxeo/content-lake-source-nuxeo/src nuxeo/content-lake-source-nuxeo/src
+        COPY nuxeo/nuxeo-live-ingester/src nuxeo/nuxeo-live-ingester/src
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo-live-ingester -am package
+            mvn -q -DskipTests -pl nuxeo/nuxeo-live-ingester -am package
         RUN mkdir -p /layers \
-         && JAR="$$(ls -1 nuxeo-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
+         && JAR="$$(ls -1 nuxeo/nuxeo-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
@@ -285,33 +292,34 @@ services:
 
   rag-service:
     build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake.git#main}"
+      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
         # syntax=docker/dockerfile:1.7
         FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
         WORKDIR /workspace
         COPY pom.xml .
-        COPY content-lake-spi/pom.xml content-lake-spi/pom.xml
-        COPY content-lake-core/pom.xml content-lake-core/pom.xml
-        COPY content-lake-source-alfresco/pom.xml content-lake-source-alfresco/pom.xml
-        COPY content-lake-source-nuxeo/pom.xml content-lake-source-nuxeo/pom.xml
-        COPY content-lake-repo-model/pom.xml content-lake-repo-model/pom.xml
-        COPY alfresco-batch-ingester/pom.xml alfresco-batch-ingester/pom.xml
-        COPY nuxeo-batch-ingester/pom.xml nuxeo-batch-ingester/pom.xml
-        COPY alfresco-live-ingester/pom.xml alfresco-live-ingester/pom.xml
-        COPY nuxeo-live-ingester/pom.xml nuxeo-live-ingester/pom.xml
-        COPY rag-service/pom.xml rag-service/pom.xml
+        COPY common/pom.xml common/pom.xml
+        COPY alfresco/pom.xml alfresco/pom.xml
+        COPY nuxeo/pom.xml nuxeo/pom.xml
+        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
+        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
+        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
+        COPY common/rag-service/pom.xml common/rag-service/pom.xml
+        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
+        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
+        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
+        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
+        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
+        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl rag-service -am dependency:go-offline
-        COPY content-lake-spi/src content-lake-spi/src
-        COPY content-lake-core/src content-lake-core/src
-        COPY content-lake-source-nuxeo/src content-lake-source-nuxeo/src
-        COPY nuxeo-live-ingester/src nuxeo-live-ingester/src
-        COPY rag-service/src rag-service/src
+            mvn -q -DskipTests -pl common/rag-service -am dependency:go-offline
+        COPY common/content-lake-spi/src common/content-lake-spi/src
+        COPY common/content-lake-core/src common/content-lake-core/src
+        COPY common/rag-service/src common/rag-service/src
         RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl rag-service -am package
+            mvn -q -DskipTests -pl common/rag-service -am package
         RUN mkdir -p /layers \
-         && JAR="$$(ls -1 rag-service/target/*.jar | grep -v 'original' | head -n 1)" \
+         && JAR="$$(ls -1 common/rag-service/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
