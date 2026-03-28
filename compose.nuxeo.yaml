@@ -1,9 +1,12 @@
 # Nuxeo server is provided by the sibling ../nuxeo-deployment project.
-# Start that project before bringing up this stack.
+# Start that project before bringing up this stack when the `nuxeo` profile is enabled.
 # The ingesters below connect to Nuxeo via host.docker.internal:8081.
 
 services:
   nuxeo-batch-ingester:
+    profiles:
+      - full
+      - nuxeo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -74,6 +77,9 @@ services:
       - stack
 
   nuxeo-live-ingester:
+    profiles:
+      - full
+      - nuxeo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |

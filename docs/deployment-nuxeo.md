@@ -16,9 +16,22 @@ docker compose up -d
 docker compose logs -f nuxeo   # wait for "Nuxeo Platform started"
 ```
 
+Then enable the Nuxeo services in `content-lake-app-deployment/`:
+
+```bash
+cd ../content-lake-app-deployment
+STACK_MODE=nuxeo make up
+# or, to include Alfresco as well:
+STACK_MODE=full make up
+```
+
 - Web UI: `http://localhost:8081/nuxeo`
 - REST base: `http://localhost:8081/nuxeo/api/v1`
 - Default credentials: `Administrator` / `Administrator`
+
+The shared proxy routes `http://localhost/nuxeo/` and
+`http://localhost/api/sync/configured?sourceType=nuxeo` only work when the deployment stack runs in
+`STACK_MODE=nuxeo` or `STACK_MODE=full`.
 
 **Trade-offs of the public image:** The `nuxeo:latest` image is a Community-era release. Suitable
 for developing and testing the REST connector; not for validating against a current Hyland Nuxeo

@@ -5,6 +5,13 @@
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
+STACK_MODE ?= full
+VALID_STACK_MODES := full alfresco nuxeo
+
+ifeq (,$(filter $(STACK_MODE),$(VALID_STACK_MODES)))
+$(error STACK_MODE must be one of: $(VALID_STACK_MODES))
+endif
+
 # If .env.local exists:
 #  1. Pass --env-file so its values are used for compose-file interpolation.
 #  2. Prefix every compose command with "set -a && . .env.local && set +a &&"
@@ -12,19 +19,21 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 #     can find MAVEN_USERNAME, MAVEN_PASSWORD, NEXUS_* and HXPR_GIT_AUTH_TOKEN.
 ifneq (,$(wildcard .env.local))
   ENV_ARGS  := --env-file .env.local
-  LOAD_ENV  := set -a && . ./.env.local && set +a &&
 else
   ENV_ARGS  :=
-  LOAD_ENV  :=
 endif
 
-DC := $(LOAD_ENV) docker compose $(ENV_ARGS)
+LOAD_ENV := set -a && . ./.env && if [ -f ./.env.local ]; then . ./.env.local; fi && set +a &&
+RAG_PERMISSION_SOURCE_IDS_EXPR := $${RAG_PERMISSION_SOURCE_IDS:-$$(if [ "$(STACK_MODE)" = "alfresco" ]; then printf '%s' "$${HXPR_REPOSITORY_ID:-default}"; elif [ "$(STACK_MODE)" = "nuxeo" ]; then printf '%s' "$${NUXEO_SOURCE_ID:-local}"; else printf '%s,%s' "$${HXPR_REPOSITORY_ID:-default}" "$${NUXEO_SOURCE_ID:-local}"; fi)}
+DC := $(LOAD_ENV) STACK_MODE=$(STACK_MODE) COMPOSE_PROFILES=$(STACK_MODE) RAG_PERMISSION_SOURCE_IDS="$(RAG_PERMISSION_SOURCE_IDS_EXPR)" docker compose $(ENV_ARGS)
 
 .PHONY: help up down logs ps config clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "  STACK_MODE=<full|alfresco|nuxeo> selects the deployed source set (default: full)."
 
 up: ## Build images (if needed) and start all services
 	$(DC) up --build -d
@@ -34,14 +43,20 @@ up: ## Build images (if needed) and start all services
 	  set +a; \
 	  host="$${SERVER_NAME:-localhost}"; \
 	  port="$${PUBLIC_PORT:-80}"; \
+	  mode="$(STACK_MODE)"; \
 	  base_url="http://$$host"; \
 	  if [ "$$port" != "80" ]; then base_url="$$base_url:$$port"; fi; \
-	  echo "Stack is starting. Key endpoints (once healthy):"; \
-	  echo "  ACA / Content Lake UI → $$base_url/"; \
-	  echo "  Alfresco             → $$base_url/alfresco"; \
-	  echo "  Share                → $$base_url/share"; \
-	  echo "  Control Center       → $$base_url/admin"; \
-	  echo "  RAG Service          → $$base_url/api/rag"
+	  echo "Stack is starting in '$$mode' mode. Key endpoints (once healthy):"; \
+	  echo "  RAG Service          → $$base_url/api/rag"; \
+	  if [ "$$mode" = "full" ] || [ "$$mode" = "alfresco" ]; then \
+	    echo "  ACA / Content Lake UI → $$base_url/"; \
+	    echo "  Alfresco             → $$base_url/alfresco"; \
+	    echo "  Share                → $$base_url/share"; \
+	    echo "  Control Center       → $$base_url/admin"; \
+	  fi; \
+	  if [ "$$mode" = "full" ] || [ "$$mode" = "nuxeo" ]; then \
+	    echo "  Nuxeo Web UI         → $$base_url/nuxeo/"; \
+	  fi
 	@echo ""
 
 down: ## Stop and remove containers (preserves volumes)

@@ -1,5 +1,8 @@
 services:
   postgres:
+    profiles:
+      - full
+      - alfresco
     image: postgres:${POSTGRES_TAG:-15.6}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -17,16 +20,23 @@ services:
       - stack
 
   activemq:
+    profiles:
+      - full
+      - alfresco
     image: alfresco/alfresco-activemq:${ACTIVEMQ_TAG:-5.18-jre17-rockylinux8}
     networks:
       - stack
 
   alfresco:
+    profiles:
+      - full
+      - alfresco
     build:
       context: ./acs/alfresco
+      additional_contexts:
+        content_lake_app: ${CONTENT_LAKE_ACS_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}
       args:
         ALFRESCO_TAG: ${ALFRESCO_CE_TAG:-25.3.0}
-        CONTENT_LAKE_GIT_CONTEXT: ${CONTENT_LAKE_ACS_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}
     environment:
       JAVA_TOOL_OPTIONS: >-
         -Dencryption.keystore.type=JCEKS
@@ -91,6 +101,9 @@ services:
       - stack
 
   solr6:
+    profiles:
+      - full
+      - alfresco
     image: alfresco/alfresco-search-services:${SEARCH_CE_TAG:-2.0.17}
     environment:
       SOLR_ALFRESCO_HOST: alfresco
@@ -116,6 +129,9 @@ services:
       - stack
 
   transform-core-aio:
+    profiles:
+      - full
+      - alfresco
     image: alfresco/alfresco-transform-core-aio:${TRANSFORM_ENGINE_TAG:-5.2.4}
     environment:
       JAVA_OPTS: >-
@@ -126,6 +142,9 @@ services:
       - stack
 
   share:
+    profiles:
+      - full
+      - alfresco
     image: alfresco/alfresco-share:${SHARE_TAG:-25.3.0}
     environment:
       CSRF_FILTER_ORIGIN: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
@@ -145,6 +164,9 @@ services:
       - stack
 
   control-center:
+    profiles:
+      - full
+      - alfresco
     image: quay.io/alfresco/alfresco-control-center:${CONTROL_CENTER_TAG:-10.2.0}
     environment:
       APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
@@ -154,28 +176,5 @@ services:
     depends_on:
       alfresco:
         condition: service_healthy
-    networks:
-      - stack
-
-  proxy:
-    image: nginx:stable-alpine
-    ports:
-      - target: 80
-        published: "${PUBLIC_PORT:-8080}"
-        host_ip: "${BIND_IP:-0.0.0.0}"
-        protocol: tcp
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - alfresco
-      - share
-      - content-app
-      - control-center
-      - solr6
-      - rag-service
-      - batch-ingester
-      - nuxeo-batch-ingester
     networks:
       - stack

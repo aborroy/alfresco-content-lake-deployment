@@ -1,5 +1,8 @@
 services:
   batch-ingester:
+    profiles:
+      - full
+      - alfresco
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -71,6 +74,9 @@ services:
       - stack
 
   live-ingester:
+    profiles:
+      - full
+      - alfresco
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -146,151 +152,11 @@ services:
     networks:
       - stack
 
-  nuxeo-batch-ingester:
-    build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
-      dockerfile_inline: |
-        # syntax=docker/dockerfile:1.7
-        FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
-        WORKDIR /workspace
-        COPY pom.xml .
-        COPY common/pom.xml common/pom.xml
-        COPY alfresco/pom.xml alfresco/pom.xml
-        COPY nuxeo/pom.xml nuxeo/pom.xml
-        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
-        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
-        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
-        COPY common/rag-service/pom.xml common/rag-service/pom.xml
-        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
-        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
-        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
-        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
-        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
-        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
-        RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo/nuxeo-batch-ingester -am dependency:go-offline
-        COPY common/content-lake-spi/src common/content-lake-spi/src
-        COPY common/content-lake-core/src common/content-lake-core/src
-        COPY nuxeo/content-lake-source-nuxeo/src nuxeo/content-lake-source-nuxeo/src
-        COPY nuxeo/nuxeo-batch-ingester/src nuxeo/nuxeo-batch-ingester/src
-        RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo/nuxeo-batch-ingester -am package
-        RUN mkdir -p /layers \
-         && JAR="$$(ls -1 nuxeo/nuxeo-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
-         && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
-        FROM eclipse-temurin:21-jre-alpine
-        RUN addgroup -S app && adduser -S -G app app
-        WORKDIR /app
-        COPY --from=build /layers/dependencies/ ./
-        COPY --from=build /layers/snapshot-dependencies/ ./
-        COPY --from=build /layers/spring-boot-loader/ ./
-        COPY --from=build /layers/application/ ./
-        USER app
-        EXPOSE 9093
-        HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-          CMD wget -qO- http://localhost:9093/actuator/health || exit 1
-        ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport -Dfile.encoding=UTF-8"
-        ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]
-    environment:
-      NUXEO_URL: http://host.docker.internal:8081/nuxeo
-      NUXEO_USERNAME: ${NUXEO_USERNAME:-Administrator}
-      NUXEO_PASSWORD: ${NUXEO_PASSWORD:-Administrator}
-      NUXEO_SOURCE_ID: ${NUXEO_SOURCE_ID:-local}
-      NUXEO_INCLUDED_ROOT_1: ${NUXEO_INCLUDED_ROOT_1:-/default-domain/workspaces/content-lake-demo}
-      NUXEO_DISCOVERY_MODE: ${NUXEO_DISCOVERY_MODE:-CHILDREN}
-      HXPR_URL: http://hxpr-app:8080
-      HXPR_REPOSITORY_ID: ${HXPR_REPOSITORY_ID}
-      HXPR_TARGET_PATH: ${HXPR_NUXEO_TARGET_PATH:-/nuxeo-sync}
-      HXPR_IDP_TOKEN_URL: http://idp:8080/idp/connect/token
-      HXPR_IDP_CLIENT_ID: ${HXPR_IDP_CLIENT_ID}
-      HXPR_IDP_CLIENT_SECRET: ${HXPR_IDP_CLIENT_SECRET}
-      HXPR_IDP_USERNAME: ${HXPR_IDP_USERNAME}
-      HXPR_IDP_PASSWORD: ${HXPR_IDP_PASSWORD}
-      MODEL_RUNNER_URL: ${MODEL_RUNNER_URL:-http://model-runner.docker.internal}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ai/mxbai-embed-large}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      hxpr-app:
-        condition: service_healthy
-    networks:
-      - stack
-
-  nuxeo-live-ingester:
-    build:
-      context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
-      dockerfile_inline: |
-        # syntax=docker/dockerfile:1.7
-        FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
-        WORKDIR /workspace
-        COPY pom.xml .
-        COPY common/pom.xml common/pom.xml
-        COPY alfresco/pom.xml alfresco/pom.xml
-        COPY nuxeo/pom.xml nuxeo/pom.xml
-        COPY common/content-lake-repo-model/pom.xml common/content-lake-repo-model/pom.xml
-        COPY common/content-lake-spi/pom.xml common/content-lake-spi/pom.xml
-        COPY common/content-lake-core/pom.xml common/content-lake-core/pom.xml
-        COPY common/rag-service/pom.xml common/rag-service/pom.xml
-        COPY alfresco/content-lake-source-alfresco/pom.xml alfresco/content-lake-source-alfresco/pom.xml
-        COPY alfresco/alfresco-batch-ingester/pom.xml alfresco/alfresco-batch-ingester/pom.xml
-        COPY alfresco/alfresco-live-ingester/pom.xml alfresco/alfresco-live-ingester/pom.xml
-        COPY nuxeo/content-lake-source-nuxeo/pom.xml nuxeo/content-lake-source-nuxeo/pom.xml
-        COPY nuxeo/nuxeo-batch-ingester/pom.xml nuxeo/nuxeo-batch-ingester/pom.xml
-        COPY nuxeo/nuxeo-live-ingester/pom.xml nuxeo/nuxeo-live-ingester/pom.xml
-        RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo/nuxeo-live-ingester -am dependency:go-offline
-        COPY common/content-lake-spi/src common/content-lake-spi/src
-        COPY common/content-lake-core/src common/content-lake-core/src
-        COPY nuxeo/content-lake-source-nuxeo/src nuxeo/content-lake-source-nuxeo/src
-        COPY nuxeo/nuxeo-live-ingester/src nuxeo/nuxeo-live-ingester/src
-        RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl nuxeo/nuxeo-live-ingester -am package
-        RUN mkdir -p /layers \
-         && JAR="$$(ls -1 nuxeo/nuxeo-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
-         && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
-        FROM eclipse-temurin:21-jre-alpine
-        RUN addgroup -S app && adduser -S -G app app
-        RUN mkdir -p /data && chown app:app /data
-        WORKDIR /app
-        COPY --from=build /layers/dependencies/ ./
-        COPY --from=build /layers/snapshot-dependencies/ ./
-        COPY --from=build /layers/spring-boot-loader/ ./
-        COPY --from=build /layers/application/ ./
-        USER app
-        EXPOSE 9094
-        HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-          CMD wget -qO- http://localhost:9094/actuator/health || exit 1
-        ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport -Dfile.encoding=UTF-8"
-        ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]
-    environment:
-      NUXEO_URL: http://host.docker.internal:8081/nuxeo
-      NUXEO_USERNAME: ${NUXEO_USERNAME:-Administrator}
-      NUXEO_PASSWORD: ${NUXEO_PASSWORD:-Administrator}
-      NUXEO_SOURCE_ID: ${NUXEO_SOURCE_ID:-local}
-      NUXEO_LIVE_AUDIT_ENABLED: ${NUXEO_LIVE_AUDIT_ENABLED:-true}
-      NUXEO_LIVE_AUDIT_CURSOR_FILE: ${NUXEO_LIVE_AUDIT_CURSOR_FILE:-/data/audit-cursor.json}
-      NUXEO_INCLUDED_ROOT_1: ${NUXEO_INCLUDED_ROOT_1:-/default-domain/workspaces/content-lake-demo}
-      HXPR_URL: http://hxpr-app:8080
-      HXPR_REPOSITORY_ID: ${HXPR_REPOSITORY_ID}
-      HXPR_TARGET_PATH: ${HXPR_NUXEO_TARGET_PATH:-/nuxeo-sync}
-      HXPR_IDP_TOKEN_URL: http://idp:8080/idp/connect/token
-      HXPR_IDP_CLIENT_ID: ${HXPR_IDP_CLIENT_ID}
-      HXPR_IDP_CLIENT_SECRET: ${HXPR_IDP_CLIENT_SECRET}
-      HXPR_IDP_USERNAME: ${HXPR_IDP_USERNAME}
-      HXPR_IDP_PASSWORD: ${HXPR_IDP_PASSWORD}
-      MODEL_RUNNER_URL: ${MODEL_RUNNER_URL:-http://model-runner.docker.internal}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ai/mxbai-embed-large}
-    volumes:
-      - nuxeo-live-audit-data:/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      hxpr-app:
-        condition: service_healthy
-    networks:
-      - stack
-
   rag-service:
+    profiles:
+      - full
+      - alfresco
+      - nuxeo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -338,8 +204,13 @@ services:
       ALFRESCO_URL: http://alfresco:8080
       ALFRESCO_INTERNAL_USERNAME: ${ALFRESCO_ADMIN_USER}
       ALFRESCO_INTERNAL_PASSWORD: ${ALFRESCO_ADMIN_PASSWORD}
+      NUXEO_URL: http://host.docker.internal:8081/nuxeo
+      NUXEO_USERNAME: ${NUXEO_USERNAME:-Administrator}
+      NUXEO_PASSWORD: ${NUXEO_PASSWORD:-Administrator}
+      NUXEO_SOURCE_ID: ${NUXEO_SOURCE_ID:-local}
       HXPR_URL: http://hxpr-app:8080
       HXPR_REPOSITORY_ID: ${HXPR_REPOSITORY_ID}
+      RAG_PERMISSION_SOURCE_IDS: ${RAG_PERMISSION_SOURCE_IDS:-}
       HXPR_IDP_TOKEN_URL: http://idp:8080/idp/connect/token
       HXPR_IDP_CLIENT_ID: ${HXPR_IDP_CLIENT_ID}
       HXPR_IDP_CLIENT_SECRET: ${HXPR_IDP_CLIENT_SECRET}
@@ -356,14 +227,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      alfresco:
-        condition: service_healthy
       hxpr-app:
         condition: service_healthy
     networks:
       - stack
 
   content-app:
+    profiles:
+      - full
+      - alfresco
     build:
       context: "${CONTENT_LAKE_UI_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake-ui.git#main}"
       dockerfile: docker/Dockerfile
@@ -375,5 +247,23 @@ services:
     networks:
       - stack
 
-volumes:
-  nuxeo-live-audit-data:
+  proxy:
+    profiles:
+      - full
+      - alfresco
+      - nuxeo
+    image: nginx:stable-alpine
+    ports:
+      - target: 80
+        published: "${PUBLIC_PORT:-8080}"
+        host_ip: "${BIND_IP:-0.0.0.0}"
+        protocol: tcp
+    volumes:
+      - ./nginx/nginx.${STACK_MODE:-full}.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rag-service:
+        condition: service_started
+    networks:
+      - stack

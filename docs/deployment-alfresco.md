@@ -1,6 +1,6 @@
 # Deployment — Alfresco Stack
 
-This guide covers running the full Content Lake stack with Alfresco as a content source.
+This guide covers running Content Lake in any mode that includes Alfresco as a content source.
 For Nuxeo-specific setup see [deployment-nuxeo.md](deployment-nuxeo.md).
 For RAG service configuration see [deployment-rag.md](deployment-rag.md).
 
@@ -10,8 +10,6 @@ All commands run from `content-lake-app-deployment/`.
 
 ## Prerequisites
 
-- **`nuxeo-deployment`** cloned at `../nuxeo-deployment` (sibling of this repo) — required even if
-  you only use Alfresco; the Nuxeo service image is referenced by compose
 - Docker Desktop with Docker Compose v2
 - Docker Model Runner — enable in Docker Desktop settings, or install `docker-model-plugin` on Linux
 - Access to `ghcr.io` for Hyland images
@@ -43,15 +41,12 @@ the Hyland/Alfresco team if you do not already have them.
 ## First Run
 
 ```bash
-# 1. Clone the Nuxeo sibling (required even if not using Nuxeo)
-git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
-
-# 2. Authenticate to GitHub Container Registry
+# 1. Authenticate to GitHub Container Registry
 docker login ghcr.io
 
-# 3. Enable Docker Model Runner in Docker Desktop
+# 2. Enable Docker Model Runner in Docker Desktop
 
-# 4. Export HXPR build credentials
+# 3. Export HXPR build credentials
 export MAVEN_USERNAME=...
 export MAVEN_PASSWORD=...
 export NEXUS_USERNAME=...
@@ -59,15 +54,27 @@ export NEXUS_PASSWORD=...
 # optional — only if needed:
 export HXPR_GIT_AUTH_TOKEN=...
 
-# 5. Pull the models (once)
+# 4. Pull the models (once)
 docker model pull ai/mxbai-embed-large
 docker model pull ai/qwen2.5
 
-# 6. Start the stack
-docker compose up --build
+# 5. Start the Alfresco-only stack
+STACK_MODE=alfresco docker compose up --build
 ```
 
 Once healthy: [http://localhost](http://localhost)
+
+## Other Modes
+
+If you also want Nuxeo ingesters and routes, start the sibling Nuxeo stack first and use
+`STACK_MODE=full`:
+
+```bash
+git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
+(cd ../nuxeo-deployment && docker compose up -d)
+
+STACK_MODE=full make up
+```
 
 ---
 
@@ -79,8 +86,8 @@ Root entrypoint is `compose.yaml`, which uses `include` to pull in:
 |---|---|
 | `compose.alfresco.yaml` | ACS, Share, Control Center, Solr, Postgres, ActiveMQ, Transform Core AIO |
 | `compose.hxpr.yaml` | hxpr-app, MongoDB, OpenSearch, IDP, LocalStack, Mockoon, router, REST |
-| `compose.nuxeo.yaml` | Nuxeo server + Postgres (can be omitted if not using Nuxeo) |
-| `compose.rag.yaml` | batch-ingester, live-ingester, nuxeo-batch-ingester, nuxeo-live-ingester, rag-service, proxy, content-app |
+| `compose.nuxeo.yaml` | Nuxeo ingesters (`profiles: ["full", "nuxeo"]`) |
+| `compose.rag.yaml` | batch-ingester, live-ingester, rag-service, proxy, content-app |
 
 Shared project name, network, and named volumes stay in the root file.
 
@@ -109,9 +116,9 @@ Port `80` (configurable via `PUBLIC_PORT`):
 | `http://localhost/share/` | Alfresco Share |
 | `http://localhost/admin/` | Alfresco Control Center |
 | `http://localhost/api-explorer/` | API Explorer |
-| `http://localhost/nuxeo/` | Nuxeo Web UI |
+| `http://localhost/nuxeo/` | Nuxeo Web UI (only in `STACK_MODE=full` and when `nuxeo-deployment` is running) |
 | `http://localhost/api/rag/` | RAG service |
-| `http://localhost/api/sync/` | Sync API (defaults to Alfresco; add `?sourceType=nuxeo` for Nuxeo) |
+| `http://localhost/api/sync/` | Sync API (Alfresco in `STACK_MODE=alfresco`, source-selecting in `STACK_MODE=full`) |
 | `http://localhost:5601/` | OpenSearch Dashboards (not through proxy) |
 
 ---
@@ -127,7 +134,7 @@ PUBLIC_PORT=9090
 ```
 
 Docker Compose only auto-loads `.env`. The `Makefile` passes `--env-file .env.local` automatically.
-If you run `docker compose` directly: `docker compose --env-file .env.local up --build`.
+If you run `docker compose` directly: `STACK_MODE=alfresco docker compose --env-file .env.local up --build`.
 
 ### Key variables
 
@@ -152,7 +159,8 @@ On Linux, override `MODEL_RUNNER_URL` to `http://host.docker.internal:12434` in 
 ## Day-To-Day Commands
 
 ```bash
-make up       # build and start (auto-loads .env.local if present)
+STACK_MODE=alfresco make up  # build and start the Alfresco-only stack
+STACK_MODE=full make up      # include Nuxeo ingesters and routes
 make down     # stop and remove containers
 make logs     # follow logs for all services
 make ps       # show running services
@@ -167,7 +175,7 @@ make config   # render the resolved compose configuration
 # Alfresco full sync
 curl -u admin:admin -X POST 'http://localhost/api/sync/configured'
 
-# Nuxeo full sync
+# Nuxeo full sync (requires `STACK_MODE=full`)
 curl -u admin:admin -X POST 'http://localhost/api/sync/configured?sourceType=nuxeo'
 ```
 

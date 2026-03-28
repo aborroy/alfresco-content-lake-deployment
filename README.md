@@ -13,15 +13,20 @@ The target workflow is:
 
 ```bash
 git clone https://github.com/aborroy/content-lake-app-deployment.git
-git clone https://github.com/aborroy/nuxeo-deployment.git   # required sibling
 cd content-lake-app-deployment
 docker login ghcr.io
-docker compose up --build
+STACK_MODE=full docker compose up --build
 ```
 
-`nuxeo-deployment` must be cloned as a sibling directory (at `../nuxeo-deployment` relative to this
-repo) and started separately. This repo no longer owns the Nuxeo server itself. No other sibling
-checkout (`alfresco/`, `hxpr/`, `content-lake-app/`, or ACA) is required.
+Supported deployment modes:
+
+- `STACK_MODE=full` - deploys Alfresco + Nuxeo ingesters, shared HXPR services, proxy, UI, and RAG
+- `STACK_MODE=alfresco` - deploys Alfresco ingesters, shared HXPR services, proxy, UI, and RAG
+- `STACK_MODE=nuxeo` - deploys Nuxeo ingesters, shared HXPR services, proxy, and RAG
+
+For any mode that includes Nuxeo (`full` or `nuxeo`), clone `nuxeo-deployment` as a sibling
+directory at `../nuxeo-deployment` and start it separately. No other sibling checkout is required
+unless you intentionally override the remote build contexts with local paths.
 
 ## Compose Layout
 
@@ -29,7 +34,7 @@ The root entrypoint is [compose.yaml](compose.yaml), which uses Docker Compose `
 
 - [compose.alfresco.yaml](compose.alfresco.yaml)
 - [compose.hxpr.yaml](compose.hxpr.yaml)
-- [compose.nuxeo.yaml](compose.nuxeo.yaml)
+- [compose.nuxeo.yaml](compose.nuxeo.yaml) - `full` / `nuxeo` services
 - [compose.rag.yaml](compose.rag.yaml)
 
 Shared project name, network, and named volumes stay in the root file.
@@ -155,7 +160,8 @@ flowchart LR
 
 Notes:
 
-- `proxy` is the only public entrypoint for Alfresco, Share, the UI, Nuxeo Web UI, batch/sync APIs, and RAG APIs.
+- `proxy` is the only public entrypoint for Alfresco, Share, the UI, batch/sync APIs, and RAG APIs.
+- The Nuxeo Web UI and Nuxeo sync routes are only active in `STACK_MODE=full` or `STACK_MODE=nuxeo`, and require `../nuxeo-deployment` to be running.
 - `opensearch-dashboards` is published separately on port `5601`, not through `proxy`.
 - Docker Model Runner is an external dependency used by the Content Lake services, not a Compose service in this repository.
 
@@ -187,9 +193,9 @@ This repo now vendors the required ACS module/config pieces locally and builds t
 These are the GitHub projects directly used by this deployment:
 
 - [`aborroy/nuxeo-deployment`](https://github.com/aborroy/nuxeo-deployment)
-  **Required sibling checkout.**  Must be cloned at `../nuxeo-deployment` before running
-  `docker compose up --build`.  Provides the `Dockerfile` and scripts used to build the Nuxeo
-  service image (`nuxeo-deployment:nuxeo-local`) from the public `nuxeo/nuxeo` source tree.
+  **Optional sibling checkout.** Required only for `STACK_MODE=full` or `STACK_MODE=nuxeo`.
+  It provides the separate local Nuxeo stack that the Nuxeo ingesters connect to at
+  `http://host.docker.internal:8081/nuxeo`.
 
 - [`aborroy/content-lake-app-deployment`](https://github.com/aborroy/content-lake-app-deployment)
   This repository. It contains the Compose files, ACS customization, HXPR build wrapper, proxy config, and deployment documentation.
@@ -212,7 +218,6 @@ These are the GitHub projects directly used by this deployment:
 
 ## Prerequisites
 
-- `nuxeo-deployment` repository cloned at `../nuxeo-deployment` (sibling of this repo)
 - Docker Desktop with Docker Compose v2
 - Docker Model Runner — enable it in Docker Desktop settings, or install `docker-model-plugin` on Linux
 - Access to `ghcr.io` for Hyland images
@@ -257,24 +262,15 @@ Use the following values:
 
 ## First Run
 
-1. Clone the `nuxeo-deployment` companion project as a sibling of this repo:
-
-   ```bash
-   git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
-   ```
-
-   Start `../nuxeo-deployment` before bringing up this stack. The Content Lake deployment expects
-   Nuxeo to be reachable at `http://host.docker.internal:8081/nuxeo`.
-
-2. Authenticate to GitHub Container Registry:
+1. Authenticate to GitHub Container Registry:
 
    ```bash
    docker login ghcr.io
    ```
 
-3. Enable Docker Model Runner in Docker Desktop.
+2. Enable Docker Model Runner in Docker Desktop.
 
-4. Export the HXPR build credentials:
+3. Export the HXPR build credentials:
 
    ```bash
    export MAVEN_USERNAME=...
@@ -285,20 +281,33 @@ Use the following values:
    export HXPR_GIT_AUTH_TOKEN=...
    ```
 
-5. Pull the models once:
+4. Pull the models once:
 
    ```bash
    docker model pull ai/mxbai-embed-large
    docker model pull ai/qwen2.5
    ```
 
-6. Start the stack:
+5. Start the desired stack mode:
 
    ```bash
-   docker compose up --build
+   STACK_MODE=alfresco docker compose up --build
+   STACK_MODE=full docker compose up --build      # also enables Nuxeo ingesters/routes
+   STACK_MODE=nuxeo docker compose up --build     # Nuxeo-only, no ACA/Alfresco services
    ```
 
 Once healthy, open [http://localhost](http://localhost).
+
+For any mode that includes Nuxeo:
+
+```bash
+git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
+(cd ../nuxeo-deployment && docker compose up -d)
+
+STACK_MODE=full make up
+# or:
+STACK_MODE=nuxeo make up
+```
 
 ## Public Endpoints
 
@@ -309,15 +318,17 @@ Only the proxy is published on the host, on port `80`.
 - `http://localhost/share/` - Alfresco Share
 - `http://localhost/admin/` - Alfresco Control Center
 - `http://localhost/api-explorer/` - API Explorer
-- `http://localhost/nuxeo/` - Nuxeo Web UI
+- `http://localhost/nuxeo/` - Nuxeo Web UI in `STACK_MODE=full` or `STACK_MODE=nuxeo`
 - `http://localhost/api/rag/` - RAG service
-- `http://localhost/api/sync/` - Sync API. Defaults to Alfresco; use `?sourceType=nuxeo` to route to the Nuxeo batch ingester.
+- `http://localhost/api/sync/` - Sync API. Alfresco-only in `STACK_MODE=alfresco`, Nuxeo-only in `STACK_MODE=nuxeo`, source-selecting in `STACK_MODE=full`.
 - `http://localhost:5601/` - OpenSearch Dashboards
 
 ## Nuxeo Demo Content
 
 If you want a known-good sample file in the local Nuxeo stack without going through the Web UI,
-use [scripts/create-nuxeo-demo-file.sh](scripts/create-nuxeo-demo-file.sh):
+first start `../nuxeo-deployment` and run this repo in `STACK_MODE=full` or `STACK_MODE=nuxeo`,
+then use
+[scripts/create-nuxeo-demo-file.sh](scripts/create-nuxeo-demo-file.sh):
 
 ```bash
 ./scripts/create-nuxeo-demo-file.sh
@@ -350,10 +361,10 @@ PUBLIC_PORT=9090
 
 > **Important:** Docker Compose only auto-loads `.env`. The Makefile passes
 > `--env-file .env.local` automatically when the file exists. If you run
-> `docker compose` directly, add the flag yourself:
+> `docker compose` directly, add the flag yourself and set `STACK_MODE` explicitly:
 >
 > ```bash
-> docker compose --env-file .env.local up --build
+> STACK_MODE=alfresco docker compose --env-file .env.local up --build
 > ```
 
 The most important overrides are:
@@ -373,14 +384,16 @@ The most important overrides are:
 ## Day-To-Day Commands
 
 ```bash
-make up       # build and start (auto-loads .env.local if present)
+STACK_MODE=full make up      # build and start with both sources
+STACK_MODE=alfresco make up  # build and start with Alfresco only
+STACK_MODE=nuxeo make up     # build and start with Nuxeo only
 make down     # stop and remove containers
 make logs     # follow logs for all services
 make ps       # show running services
 make config   # render the resolved compose configuration
 ```
 
-You can also use `docker compose` directly; remember to add `--env-file .env.local` if you have local overrides.
+You can also use `docker compose` directly; remember to add `--env-file .env.local` if you have local overrides and set `STACK_MODE` to `full`, `alfresco`, or `nuxeo`.
 
 ## Deploying to AWS EC2
 

@@ -8,18 +8,12 @@ ARG ALFRESCO_TAG
 ############################################
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS model-build
 
-ARG CONTENT_LAKE_GIT_CONTEXT=https://github.com/aborroy/content-lake-app.git#main
-
-RUN apk add --no-cache git
-
 WORKDIR /src
 
-RUN GIT_URL="${CONTENT_LAKE_GIT_CONTEXT%#*}" \
- && GIT_REF="${CONTENT_LAKE_GIT_CONTEXT#*#}" \
- && git clone --depth 1 --branch "$GIT_REF" "$GIT_URL" .
+COPY --from=content_lake_app . .
 
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -q -DskipTests -pl content-lake-repo-model package
+    mvn -q -DskipTests -pl common/content-lake-repo-model -am package
 
 ############################################
 # Stage 2: Alfresco with the model JAR
@@ -30,7 +24,7 @@ ARG TOMCAT_DIR=/usr/local/tomcat
 
 USER root
 
-COPY --from=model-build /src/content-lake-repo-model/target/content-lake-repo-model-*.jar \
+COPY --from=model-build /src/common/content-lake-repo-model/target/content-lake-repo-model-*.jar \
   ${TOMCAT_DIR}/webapps/alfresco/WEB-INF/lib/
 
 USER alfresco
