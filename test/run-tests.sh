@@ -6,6 +6,7 @@
 #
 # Phase 1: start Alfresco stack → run Alfresco tests → stop.
 # Phase 2: start Nuxeo + content-lake → run Nuxeo tests → stop everything.
+# Phase 3: start full stack → run cross-source RAG tests → stop everything.
 
 set -uo pipefail
 
@@ -103,10 +104,44 @@ banner "Running Nuxeo test suite"
 NUXEO_RC=0
 bash "$SCRIPT_DIR/test-nuxeo.sh" || NUXEO_RC=$?
 
+# ── Phase 3: Full stack ───────────────────────────────────────────────────────
+banner "PHASE 3 — Full Stack RAG"
+
+info "Stopping Content Lake Nuxeo-only services before full-stack start …"
+STACK_MODE=nuxeo make down
+
+info "Starting Content Lake full stack (STACK_MODE=full) …"
+STACK_MODE=full make up
+
+info "Waiting for Alfresco in full mode (up to 10 min) …"
+wait_for_url \
+  'http://localhost/alfresco/api/-default-/public/alfresco/versions/1/nodes/-root-/children' \
+  'admin:admin' 60 10 \
+  || die "Alfresco did not become ready in full mode within 10 minutes"
+ok "Alfresco is up in full mode"
+
+info "Waiting for Nuxeo (up to 8 min) …"
+wait_for_url 'http://localhost:8081/nuxeo/api/v1/path/default-domain' \
+  'Administrator:Administrator' 96 5 \
+  || die "Nuxeo did not become ready for full mode within 8 minutes"
+ok "Nuxeo is up"
+
+info "Waiting for RAG service …"
+wait_for_url 'http://localhost/api/rag/health' '' 36 5 \
+  || warn "RAG service health endpoint not returning 200 in full mode; proceeding anyway"
+ok "RAG service is up"
+
+info "Waiting 30 s for full-stack ingesters to initialise …"
+sleep 30
+
+banner "Running full-stack RAG suite"
+FULL_RC=0
+bash "$SCRIPT_DIR/test-rag-full.sh" || FULL_RC=$?
+
 # ── Teardown ──────────────────────────────────────────────────────────────────
 banner "Stopping everything"
 cd "$DEPLOY_DIR"
-STACK_MODE=nuxeo make down
+STACK_MODE=full make down
 (cd "$NUXEO_DIR" && docker compose down)
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -121,5 +156,10 @@ if [ "$NUXEO_RC" -eq 0 ]; then
 else
   printf "${R}  Nuxeo suite    : FAILED (exit %d)${N}\n" "$NUXEO_RC"
 fi
+if [ "$FULL_RC" -eq 0 ]; then
+  printf "${G}  Full RAG suite : PASSED${N}\n"
+else
+  printf "${R}  Full RAG suite : FAILED (exit %d)${N}\n" "$FULL_RC"
+fi
 echo ""
-[ "$ALFRESCO_RC" -eq 0 ] && [ "$NUXEO_RC" -eq 0 ]
+[ "$ALFRESCO_RC" -eq 0 ] && [ "$NUXEO_RC" -eq 0 ] && [ "$FULL_RC" -eq 0 ]
