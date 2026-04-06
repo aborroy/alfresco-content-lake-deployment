@@ -422,6 +422,8 @@ services:
       ALFRESCO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
       NUXEO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/nuxeo
       RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/api/rag
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       rag-service:
         condition: service_started
