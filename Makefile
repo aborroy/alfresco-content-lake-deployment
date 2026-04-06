@@ -49,19 +49,20 @@ up: ## Build images (if needed) and start all services
 	  echo "Stack is starting in '$$mode' mode. Key endpoints (once healthy):"; \
 	  echo "  RAG Service          → $$base_url/api/rag"; \
 	  if [ "$$mode" = "full" ] || [ "$$mode" = "alfresco" ]; then \
-	    echo "  ACA / Content Lake UI → $$base_url/"; \
+	    echo "  ACA / Content Lake UI → $$base_url/aca/"; \
 	    echo "  Alfresco             → $$base_url/alfresco"; \
 	    echo "  Share                → $$base_url/share"; \
 	    echo "  Control Center       → $$base_url/admin"; \
 	  fi; \
 	  if [ "$$mode" = "demo" ]; then \
 	    echo "  Demo App             → $$base_url/"; \
+	    echo "  ACA / Content Lake UI → $$base_url/aca/"; \
 	    echo "  Alfresco             → $$base_url/alfresco"; \
 	    echo "  Share                → $$base_url/share"; \
 	    echo "  Control Center       → $$base_url/admin"; \
 	  fi; \
 	  if [ "$$mode" = "full" ] || [ "$$mode" = "nuxeo" ] || [ "$$mode" = "demo" ]; then \
-	    echo "  Nuxeo Web UI         → $$base_url/nuxeo/"; \
+	    echo "  Nuxeo Web UI         → $$base_url/nuxeo/ui/"; \
 	  fi
 	@echo ""
 
