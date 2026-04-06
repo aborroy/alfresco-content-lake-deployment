@@ -3,6 +3,7 @@ services:
     profiles:
       - full
       - alfresco
+      - demo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -81,6 +82,7 @@ services:
     profiles:
       - full
       - alfresco
+      - demo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -161,6 +163,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -240,6 +243,7 @@ services:
     profiles:
       - full
       - nuxeo
+      - demo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -312,6 +316,7 @@ services:
     profiles:
       - full
       - nuxeo
+      - demo
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -386,6 +391,7 @@ services:
     profiles:
       - full
       - alfresco
+      - demo
     build:
       context: "${CONTENT_LAKE_UI_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake-ui.git#main}"
       dockerfile: docker/Dockerfile
@@ -397,11 +403,35 @@ services:
     networks:
       - stack
 
+  content-lake-app-ui:
+    profiles:
+      - demo
+    build:
+      context: "${CONTENT_LAKE_APP_UI_CONTEXT:-../content-lake-app-ui}"
+    ports:
+      - target: 80
+        published: "${DEMO_UI_PORT:-4200}"
+        host_ip: "${BIND_IP:-0.0.0.0}"
+        protocol: tcp
+    # The container's nginx proxies /api/rag, /alfresco/, /nuxeo/ to the
+    # backend services on the Docker network — same-origin from the browser,
+    # so no CORS configuration is needed.
+    environment:
+      ALFRESCO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
+      NUXEO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/nuxeo
+      RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/api/rag
+    depends_on:
+      rag-service:
+        condition: service_started
+    networks:
+      - stack
+
   proxy:
     profiles:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: nginx:stable-alpine
     ports:
       - target: 80

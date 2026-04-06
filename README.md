@@ -23,12 +23,17 @@ Supported deployment modes:
 - `STACK_MODE=full` - deploys Alfresco + Nuxeo ingesters, shared HXPR services, proxy, UI, and RAG
 - `STACK_MODE=alfresco` - deploys Alfresco ingesters, shared HXPR services, proxy, UI, and RAG
 - `STACK_MODE=nuxeo` - deploys Nuxeo ingesters, shared HXPR services, proxy, and RAG
+- `STACK_MODE=demo` - deploys the new demo app at `/`, plus Alfresco + Nuxeo ingesters, shared HXPR services, proxy, and RAG
 
-For any mode that includes Nuxeo (`full` or `nuxeo`), clone `nuxeo-deployment` as a sibling
-directory at `../nuxeo-deployment` and start it separately. No other sibling checkout is required
-unless you intentionally override the remote build contexts with local paths.
+For any mode that includes Nuxeo (`full`, `nuxeo`, or `demo`), clone `nuxeo-deployment` as a
+sibling directory at `../nuxeo-deployment` and start it separately.
 
-Important: `STACK_MODE=nuxeo` does not start the Nuxeo server itself. The proxy forwards
+If you use `STACK_MODE=demo`, also make sure the demo UI source is available at
+`../content-lake-app-ui`, or override `CONTENT_LAKE_APP_UI_CONTEXT` to point at a local checkout.
+No other sibling checkout is required unless you intentionally override the remote build contexts
+with local paths.
+
+Important: `STACK_MODE=nuxeo` and `STACK_MODE=demo` do not start the Nuxeo server itself. The proxy forwards
 `/nuxeo/*` to `http://host.docker.internal:8081/nuxeo`, so if `../nuxeo-deployment` is not
 running you will get `502 Bad Gateway` on `http://localhost/nuxeo/` or
 `http://localhost/nuxeo/ui`.
@@ -39,7 +44,7 @@ The root entrypoint is [compose.yaml](compose.yaml), which uses Docker Compose `
 
 - [compose.alfresco.yaml](compose.alfresco.yaml)
 - [compose.hxpr.yaml](compose.hxpr.yaml)
-- [compose.nuxeo.yaml](compose.nuxeo.yaml) - `full` / `nuxeo` services
+- [compose.nuxeo.yaml](compose.nuxeo.yaml) - `full` / `nuxeo` / `demo` services
 - [compose.rag.yaml](compose.rag.yaml)
 
 Shared project name, network, and named volumes stay in the root file.
@@ -63,6 +68,7 @@ flowchart LR
   subgraph ACL["content-lake-app"]
     Proxy["proxy"]
     ContentApp["content-app"]
+    DemoUi["content-lake-app-ui"]
     Batch["alfresco-batch-ingester"]
     Live["alfresco-live-ingester"]
     NuxeoBatch["nuxeo-batch-ingester"]
@@ -100,6 +106,7 @@ flowchart LR
   Browser --> Proxy
 
   Proxy --> ContentApp
+  Proxy --> DemoUi
   Proxy --> Alfresco
   Proxy --> Share
   Proxy --> ControlCenter
@@ -109,6 +116,7 @@ flowchart LR
   Proxy --> Rag
 
   ContentApp --> Alfresco
+  DemoUi --> Proxy
   Share --> Alfresco
   ControlCenter --> Alfresco
   Alfresco --> Postgres
@@ -166,7 +174,10 @@ flowchart LR
 Notes:
 
 - `proxy` is the only public entrypoint for Alfresco, Share, the UI, batch/sync APIs, and RAG APIs.
-- The Nuxeo Web UI and Nuxeo sync routes are only active in `STACK_MODE=full` or `STACK_MODE=nuxeo`, and require `../nuxeo-deployment` to be running.
+- `content-app` is exposed at `/aca/` in every mode where it is present (`full`, `alfresco`, `demo`).
+- In `STACK_MODE=full` and `STACK_MODE=alfresco`, `/` redirects to `/aca/`.
+- In `STACK_MODE=demo`, `content-lake-app-ui` serves `/` and the customized ACA remains available at `/aca/`.
+- The Nuxeo Web UI and Nuxeo sync routes are active in `STACK_MODE=full`, `STACK_MODE=nuxeo`, and `STACK_MODE=demo`, and require `../nuxeo-deployment` to be running.
 - `opensearch-dashboards` is published separately on port `5601`, not through `proxy`.
 - Docker Model Runner is an external dependency used by the Content Lake services, not a Compose service in this repository.
 
@@ -190,6 +201,7 @@ This repo now vendors the required ACS module/config pieces locally and builds t
 - Remote builds for:
   - `aborroy/content-lake-app`
   - `aborroy/alfresco-content-lake-ui`
+- Local or overridden build context support for the demo UI (`content-lake-app-ui`)
 - Docker Compose orchestration for the full stack
 - A split Compose structure using the `include` directive
 
@@ -198,7 +210,7 @@ This repo now vendors the required ACS module/config pieces locally and builds t
 These are the GitHub projects directly used by this deployment:
 
 - [`aborroy/nuxeo-deployment`](https://github.com/aborroy/nuxeo-deployment)
-  **Optional sibling checkout.** Required only for `STACK_MODE=full` or `STACK_MODE=nuxeo`.
+  **Optional sibling checkout.** Required only for `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`.
   It provides the separate local Nuxeo stack that the Nuxeo ingesters connect to at
   `http://host.docker.internal:8081/nuxeo`.
 
@@ -211,6 +223,10 @@ These are the GitHub projects directly used by this deployment:
 
 - [`aborroy/alfresco-content-lake-ui`](https://github.com/aborroy/alfresco-content-lake-ui)
   Used as the remote BuildKit context for the `content-app` UI image.
+
+- `content-lake-app-ui`
+  Used as the local build context for the `content-lake-app-ui` demo image by default
+  (`../content-lake-app-ui`), or via the `CONTENT_LAKE_APP_UI_CONTEXT` override.
 
 - [`HylandSoftware/hxpr`](https://github.com/HylandSoftware/hxpr)
   Cloned during the local HXPR image build to produce the `hxpr-app` service.
@@ -299,6 +315,7 @@ Use the following values:
    STACK_MODE=alfresco make up
    STACK_MODE=full make up      # also enables Nuxeo ingesters/routes
    STACK_MODE=nuxeo make up     # Nuxeo-only, no ACA/Alfresco services
+   STACK_MODE=demo make up      # demo UI at / with Alfresco + Nuxeo routes
    ```
 
 Once healthy, open [http://localhost](http://localhost).
@@ -312,6 +329,14 @@ git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
 STACK_MODE=full make up
 # or:
 STACK_MODE=nuxeo make up
+# or:
+STACK_MODE=demo make up
+```
+
+For `STACK_MODE=demo`, the demo UI source is also expected locally:
+
+```bash
+git clone https://github.com/aborroy/content-lake-app-ui.git ../content-lake-app-ui
 ```
 
 If `http://localhost/nuxeo/ui` returns `502 Bad Gateway`, check that `../nuxeo-deployment` is
@@ -321,20 +346,22 @@ running and that the Nuxeo server is reachable on `http://localhost:8081/nuxeo`.
 
 Only the proxy is published on the host, on port `80`.
 
-- `http://localhost/` - ACA-based Content Lake UI
+- `http://localhost/` - Redirects to `/aca/` in `STACK_MODE=full` or `STACK_MODE=alfresco`; demo UI in `STACK_MODE=demo`; redirects to `/nuxeo/` in `STACK_MODE=nuxeo`
+- `http://localhost/aca/` - Customized ACA UI in `STACK_MODE=full`, `STACK_MODE=alfresco`, and `STACK_MODE=demo`
 - `http://localhost/alfresco/` - Alfresco Repository
 - `http://localhost/share/` - Alfresco Share
 - `http://localhost/admin/` - Alfresco Control Center
 - `http://localhost/api-explorer/` - API Explorer
-- `http://localhost/nuxeo/` - Nuxeo Web UI in `STACK_MODE=full` or `STACK_MODE=nuxeo`
+- `http://localhost/nuxeo/` - Nuxeo Web UI in `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`
 - `http://localhost/api/rag/` - RAG service
-- `http://localhost/api/sync/` - Sync API. Alfresco-only in `STACK_MODE=alfresco`, Nuxeo-only in `STACK_MODE=nuxeo`, source-selecting in `STACK_MODE=full`.
+- `http://localhost/api/content-lake/` - Alfresco ingestion/status endpoints in modes that include Alfresco
+- `http://localhost/api/sync/` - Sync API. Alfresco-only in `STACK_MODE=alfresco`, Nuxeo-only in `STACK_MODE=nuxeo`, source-selecting in `STACK_MODE=full` and `STACK_MODE=demo`.
 - `http://localhost:5601/` - OpenSearch Dashboards
 
 ## Nuxeo Demo Content
 
 If you want a known-good sample file in the local Nuxeo stack without going through the Web UI,
-first start `../nuxeo-deployment` and run this repo in `STACK_MODE=full` or `STACK_MODE=nuxeo`,
+first start `../nuxeo-deployment` and run this repo in `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`,
 then use
 [scripts/create-nuxeo-demo-file.sh](scripts/create-nuxeo-demo-file.sh):
 
@@ -383,8 +410,10 @@ The most important overrides are:
 - `HXPR_LOCAL_IMAGE` — local image tag used for the built HXPR app.
 - `CONTENT_LAKE_GIT_CONTEXT` — defaults to `https://github.com/aborroy/content-lake-app.git#main`.
 - `CONTENT_LAKE_UI_GIT_CONTEXT` — defaults to `https://github.com/aborroy/alfresco-content-lake-ui.git#main`.
+- `CONTENT_LAKE_APP_UI_CONTEXT` — defaults to `../content-lake-app-ui` and is used by `STACK_MODE=demo`.
 - `ACA_TAG` — defaults to `7.3.0`.
 - `PUBLIC_PORT` — defaults to `80`.
+- `DEMO_UI_PORT` — defaults to `4200` for direct access to the demo UI container during local development.
 - `MODEL_RUNNER_URL`, `EMBEDDING_MODEL`, `LLM_MODEL` — control the LLM inference backend.
   The default points to Docker Model Runner (`http://model-runner.docker.internal`).
   Spring AI appends `/v1/...` itself. On Linux, override to `http://host.docker.internal:12434` in `.env.local`.
@@ -395,13 +424,14 @@ The most important overrides are:
 STACK_MODE=full make up      # build and start with both sources
 STACK_MODE=alfresco make up  # build and start with Alfresco only
 STACK_MODE=nuxeo make up     # build and start with Nuxeo only
+STACK_MODE=demo make up      # build and start with the demo UI at /
 make down     # stop and remove containers
 make logs     # follow logs for all services
 make ps       # show running services
 make config   # render the resolved compose configuration
 ```
 
-You can also use `docker compose` directly; remember to add `--env-file .env.local` if you have local overrides and set `STACK_MODE` to `full`, `alfresco`, or `nuxeo`.
+You can also use `docker compose` directly; remember to add `--env-file .env.local` if you have local overrides and set `STACK_MODE` to `full`, `alfresco`, `nuxeo`, or `demo`.
 
 ## Deploying to AWS EC2
 
@@ -414,7 +444,9 @@ See [docs/DEPLOY_EC2.md](docs/DEPLOY_EC2.md) for a step-by-step guide to running
 - The Content Lake services still build from source, but Docker now fetches that source itself from GitHub during `docker compose up --build`.
 - The repository model is injected directly into the Alfresco image from this repo, so the scope model no longer depends on a second checkout.
 - Share and Search Services now use the stock Alfresco images directly rather than local wrapper Dockerfiles.
-- The UI is built from `alfresco-content-lake-ui`, which already knows how to layer the RAG extension onto ACA.
+- The ACA UI is built from `alfresco-content-lake-ui`, which already knows how to layer the RAG extension onto ACA.
+- That ACA UI is exposed at `/aca/` in every mode where it is enabled, so its context path stays stable across stacks.
+- The demo UI is built from `content-lake-app-ui` and is served at `/` only in `STACK_MODE=demo`.
 - HXPR, OpenSearch, MongoDB, LocalStack, Transform services, and the ingesters are internal-only. OpenSearch Dashboards remains published on `5601`.
 
 ## Known Assumption

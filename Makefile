@@ -6,7 +6,7 @@ export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
 STACK_MODE ?= full
-VALID_STACK_MODES := full alfresco nuxeo
+VALID_STACK_MODES := full alfresco nuxeo demo
 
 ifeq (,$(filter $(STACK_MODE),$(VALID_STACK_MODES)))
 $(error STACK_MODE must be one of: $(VALID_STACK_MODES))
@@ -33,7 +33,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  STACK_MODE=<full|alfresco|nuxeo> selects the deployed source set (default: full)."
+	@echo "  STACK_MODE=<full|alfresco|nuxeo|demo> selects the deployed source set (default: full)."
 
 up: ## Build images (if needed) and start all services
 	$(DC) up --build -d
@@ -54,7 +54,13 @@ up: ## Build images (if needed) and start all services
 	    echo "  Share                → $$base_url/share"; \
 	    echo "  Control Center       → $$base_url/admin"; \
 	  fi; \
-	  if [ "$$mode" = "full" ] || [ "$$mode" = "nuxeo" ]; then \
+	  if [ "$$mode" = "demo" ]; then \
+	    echo "  Demo App             → $$base_url/"; \
+	    echo "  Alfresco             → $$base_url/alfresco"; \
+	    echo "  Share                → $$base_url/share"; \
+	    echo "  Control Center       → $$base_url/admin"; \
+	  fi; \
+	  if [ "$$mode" = "full" ] || [ "$$mode" = "nuxeo" ] || [ "$$mode" = "demo" ]; then \
 	    echo "  Nuxeo Web UI         → $$base_url/nuxeo/"; \
 	  fi
 	@echo ""

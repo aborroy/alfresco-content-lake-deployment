@@ -4,6 +4,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: ghcr.io/hylandexperience/hxp/iam/api.mock:${IDP_TAG:-26.35.14}
     hostname: idp
     volumes:
@@ -16,6 +17,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: mongo:${MONGODB_TAG:-8.2.5}
     hostname: mongo
     volumes:
@@ -34,6 +36,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: opensearchproject/opensearch:${OPENSEARCH_TAG:-3.5.0}
     hostname: opensearch
     environment:
@@ -55,6 +58,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: opensearchproject/opensearch-dashboards:${OPENSEARCH_TAG:-3.5.0}
     ports:
       - "5601:5601"
@@ -72,6 +76,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: localstack/localstack:${LOCALSTACK_TAG:-4.13.1}
     environment:
       SERVICES: s3,sts,sqs,sns
@@ -97,6 +102,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: mockoon/cli:${MOCKOON_TAG:-9.3.0}
     hostname: mockoon
     volumes:
@@ -110,6 +116,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: ghcr.io/hylandsoftware/hxp-transform-aio:${HXTS_TAG:-3.0.566}
     environment:
       SFS_URL: http://rest:8098/private/file
@@ -127,6 +134,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: ghcr.io/hylandsoftware/hxp-transform-router:${HXTS_TAG:-3.0.566}
     environment:
       SFS_URL: http://rest:8098/private/file
@@ -144,6 +152,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: ghcr.io/hylandsoftware/hxp-transform-rest:${HXTS_TAG:-3.0.566}
     environment:
       REST_AUTHENTICATED: "false"
@@ -169,6 +178,7 @@ services:
       - full
       - alfresco
       - nuxeo
+      - demo
     image: "${HXPR_LOCAL_IMAGE:-alfresco-content-lake/hxpr-app:local}"
     build:
       context: .
