@@ -1,11 +1,6 @@
 name: content-lake-app
 
-include:
-  - ./compose.alfresco.yaml
-  - ./compose.hxpr.yaml
-  - ./compose.nuxeo.yaml
-  - ./compose.rag.yaml
-
+# ─── Shared infrastructure ────────────────────────────────────────────────────
 networks:
   stack:
     driver: bridge
@@ -17,7 +12,9 @@ volumes:
   mongodb-data:
   localstack-data:
   shared-file-store:
+  nuxeo-live-audit-data:
 
+# ─── Build secrets ────────────────────────────────────────────────────────────
 secrets:
   hxpr_git_auth_token:
     environment: HXPR_GIT_AUTH_TOKEN
@@ -29,3 +26,19 @@ secrets:
     environment: NEXUS_USERNAME
   nexus_password:
     environment: NEXUS_PASSWORD
+
+# ─── Compose modules ──────────────────────────────────────────────────────────
+#
+# Profiles:
+#   alfresco  — Alfresco source (core services only)
+#   nuxeo     — Nuxeo source only
+#   full      — Alfresco + Nuxeo (core)
+#   demo      — full + standalone demo UI at /
+#   extras    — Optional add-ons: Solr, Share, Admin Center, live sync, dashboards
+#               Combine with any profile: --profile alfresco --profile extras
+
+include:
+  - compose.alfresco.yaml
+  - compose.hxpr.yaml
+  - compose.content-lake.yaml
+  - compose.ui.yaml

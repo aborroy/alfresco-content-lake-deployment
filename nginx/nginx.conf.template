@@ -1,3 +1,9 @@
+# nginx.conf.template — substituted by envsubst at container startup.
+#
+# Two variables are injected by docker compose (set per Makefile target):
+#   NGINX_SYNC_DEFAULT_BACKEND  e.g. batch-ingester:9090 or nuxeo-batch-ingester:9093
+#   NGINX_ROOT_DIRECTIVE        e.g. "return 302 /aca/;"  or  "proxy_pass http://content-lake-app-ui:80;"
+
 worker_processes  1;
 
 events {
@@ -5,15 +11,21 @@ events {
 }
 
 http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
     resolver 127.0.0.11 ipv6=off valid=30s;
 
+    # Route /api/sync to the appropriate batch-ingester.
+    # Default backend is profile-dependent (NGINX_SYNC_DEFAULT_BACKEND).
     map $arg_sourceType $sync_backend {
-        default batch-ingester:9090;
-        "" batch-ingester:9090;
+        default  ${NGINX_SYNC_DEFAULT_BACKEND};
+        ""       ${NGINX_SYNC_DEFAULT_BACKEND};
         alfresco batch-ingester:9090;
-        nuxeo nuxeo-batch-ingester:9093;
+        nuxeo    nuxeo-batch-ingester:9093;
     }
 
+    # Auto-inject Nuxeo Basic auth on /api/sync when no Authorization header present.
     map "$arg_sourceType:$http_authorization" $sync_authorization {
         default $http_authorization;
         "nuxeo:" "Basic QWRtaW5pc3RyYXRvcjpBZG1pbmlzdHJhdG9y";
@@ -42,21 +54,34 @@ http {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_pass_header Set-Cookie;
 
+        # Upstreams as variables — nginx resolves at request time, not at startup.
+        # Services absent for the active profile simply return 502 if called.
         set $batch_ingester_upstream batch-ingester:9090;
-        set $rag_service_upstream rag-service:9091;
+        set $rag_service_upstream    rag-service:9091;
         set $control_center_upstream control-center:8080;
-        set $alfresco_upstream alfresco:8080;
-        set $share_upstream share:8080;
-        set $content_app_upstream content-app:8080;
+        set $alfresco_upstream       alfresco:8080;
+        set $share_upstream          share:8080;
+        set $content_app_upstream    content-app:8080;
+        set $demo_ui_upstream        content-lake-app-ui:80;
 
-        location ~ ^(/.*/service/api/solr/.*)$    { return 403; }
-        location ~ ^(/.*/s/api/solr/.*)$           { return 403; }
-        location ~ ^(/.*/wcservice/api/solr/.*)$   { return 403; }
-        location ~ ^(/.*/wcs/api/solr/.*)$         { return 403; }
-        location ~ ^(/.*/proxy/alfresco/api/solr/.*)$ { return 403; }
+        # Block direct Solr access
+        location ~ ^(/.*/service/api/solr/.*)$             { return 403; }
+        location ~ ^(/.*/s/api/solr/.*)$                   { return 403; }
+        location ~ ^(/.*/wcservice/api/solr/.*)$           { return 403; }
+        location ~ ^(/.*/wcs/api/solr/.*)$                 { return 403; }
+        location ~ ^(/.*/proxy/alfresco/api/solr/.*)$      { return 403; }
         location ~ ^(/.*/-default-/proxy/alfresco/api/.*)$ { return 403; }
 
+        # SSE chat stream — no retry-on-error, extended timeout, no cache
+        location /api/rag/chat/stream {
+            proxy_pass http://$rag_service_upstream;
+            proxy_next_upstream off;
+            proxy_read_timeout 300s;
+            proxy_cache off;
+        }
+
         location /api/sync {
+            if ($sync_backend = "") { return 404; }
             proxy_set_header Authorization $sync_authorization;
             proxy_pass http://$sync_backend;
         }
@@ -86,8 +111,6 @@ http {
         }
 
         location /nuxeo/ {
-            # Keep this static so nginx uses the container's /etc/hosts entry
-            # for host.docker.internal on Linux instead of Docker DNS.
             proxy_pass http://host.docker.internal:8081;
         }
 
@@ -109,12 +132,12 @@ http {
             sub_filter 'src="/' 'src="/aca/';
         }
 
-        location = / {
-            return 302 /aca/;
-        }
-
+        # Catch-all: behaviour is profile-dependent (NGINX_ROOT_DIRECTIVE).
+        #   alfresco/full → return 302 /aca/;
+        #   nuxeo         → return 302 /nuxeo/;
+        #   demo          → proxy_pass http://content-lake-app-ui:80;
         location / {
-            return 302 /aca/;
+            ${NGINX_ROOT_DIRECTIVE}
         }
     }
 }

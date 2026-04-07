@@ -9,45 +9,65 @@
 
 Self-contained deployment for Content Lake App — ingests content from Alfresco and Nuxeo into hxpr for hybrid semantic search and RAG.
 
-The target workflow is:
+## Quick start
 
 ```bash
 git clone https://github.com/aborroy/content-lake-app-deployment.git
 cd content-lake-app-deployment
-docker login ghcr.io
-STACK_MODE=full docker compose up --build
+./setup.sh          # checks prerequisites, pulls AI models, prompts for credentials, starts the stack
 ```
 
-Supported deployment modes:
+The setup script handles everything for a first run. For manual control see [First Run](#first-run) below.
 
-- `STACK_MODE=full` - deploys Alfresco + Nuxeo ingesters, shared HXPR services, proxy, UI, and RAG
-- `STACK_MODE=alfresco` - deploys Alfresco ingesters, shared HXPR services, proxy, UI, and RAG
-- `STACK_MODE=nuxeo` - deploys Nuxeo ingesters, shared HXPR services, proxy, and RAG
-- `STACK_MODE=demo` - deploys the new demo app at `/`, plus Alfresco + Nuxeo ingesters, shared HXPR services, proxy, and RAG
+## Profiles
 
-For any mode that includes Nuxeo (`full`, `nuxeo`, or `demo`), clone `nuxeo-deployment` as a
-sibling directory at `../nuxeo-deployment` and start it separately.
+The stack supports four source profiles. Start with `alfresco` if you only have Alfresco:
 
-If you use `STACK_MODE=demo`, also make sure the demo UI source is available at
-`../content-lake-app-ui`, or override `CONTENT_LAKE_APP_UI_CONTEXT` to point at a local checkout.
-No other sibling checkout is required unless you intentionally override the remote build contexts
-with local paths.
+```bash
+make up-alfresco       # Alfresco + HXPR + RAG + ACA UI  (~17 services)
+make up-alfresco-full  # same + Share, Admin Center, Solr, live sync  (~22 services)
+make up-nuxeo          # Nuxeo + HXPR + RAG  (~13 services)
+make up-full           # Alfresco + Nuxeo + HXPR + RAG  (~19 services)
+make up-demo           # full + standalone demo UI at /  (~20 services)
+```
 
-Important: `STACK_MODE=nuxeo` and `STACK_MODE=demo` do not start the Nuxeo server itself. The proxy forwards
-`/nuxeo/*` to `http://host.docker.internal:8081/nuxeo`, so if `../nuxeo-deployment` is not
-running you will get `502 Bad Gateway` on `http://localhost/nuxeo/` or
-`http://localhost/nuxeo/ui`.
+The `extras` profile adds optional services (Share, Control Center, Solr, OpenSearch Dashboards, live ingester) to any base profile:
+
+```bash
+docker compose --profile alfresco --profile extras up --build -d
+```
+
+For any profile that includes Nuxeo (`nuxeo`, `full`, `demo`), clone `nuxeo-deployment` as a sibling and start it first:
+
+```bash
+git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
+(cd ../nuxeo-deployment && docker compose up -d)
+make up-full
+```
+
+No other sibling checkout is required — all Java services build directly from GitHub via Docker BuildKit.
+
+Important: profiles `nuxeo`, `full`, and `demo` do not start the Nuxeo server itself. The proxy
+forwards `/nuxeo/*` to `http://host.docker.internal:8081`, so if `../nuxeo-deployment` is not
+running you will get `502 Bad Gateway` on `http://localhost/nuxeo/`.
 
 ## Compose Layout
 
-The root entrypoint is [compose.yaml](compose.yaml), which uses Docker Compose `include` to pull in:
+The stack is split across five files. `compose.yaml` is the only entrypoint — it declares shared
+infrastructure (network, named volumes, build secrets) and pulls in the rest via `include:`.
 
-- [compose.alfresco.yaml](compose.alfresco.yaml)
-- [compose.hxpr.yaml](compose.hxpr.yaml)
-- [compose.nuxeo.yaml](compose.nuxeo.yaml) - `full` / `nuxeo` / `demo` services
-- [compose.rag.yaml](compose.rag.yaml)
+| File | Contents |
+|---|---|
+| [`compose.yaml`](compose.yaml) | Shared network, volumes, secrets + `include:` list |
+| [`compose.alfresco.yaml`](compose.alfresco.yaml) | Alfresco: postgres, activemq, alfresco, transform-core-aio, solr6\*, share\*, control-center\* |
+| [`compose.hxpr.yaml`](compose.hxpr.yaml) | HXPR platform: hxpr-app, mongodb, opensearch, idp, localstack, mockoon, router, rest, aio, opensearch-dashboards\* |
+| [`compose.content-lake.yaml`](compose.content-lake.yaml) | Content Lake services: batch-ingester, live-ingester\*, rag-service, nuxeo-batch-ingester, nuxeo-live-ingester |
+| [`compose.ui.yaml`](compose.ui.yaml) | UI and proxy: content-app, content-lake-app-ui (demo only), proxy |
 
-Shared project name, network, and named volumes stay in the root file.
+\* `extras` profile only.
+
+Always run from the project root using `make` or `docker compose` — the included files are not
+designed to be run in isolation.
 
 ## Documentation
 
@@ -70,7 +90,7 @@ flowchart LR
     ContentApp["content-app"]
     DemoUi["content-lake-app-ui"]
     Batch["alfresco-batch-ingester"]
-    Live["alfresco-live-ingester"]
+    Live["alfresco-live-ingester (extras)"]
     NuxeoBatch["nuxeo-batch-ingester"]
     NuxeoLive["nuxeo-live-ingester"]
     Rag["rag-service"]
@@ -78,9 +98,9 @@ flowchart LR
 
   subgraph ACS["Alfresco"]
     Alfresco["alfresco"]
-    Share["share"]
-    ControlCenter["control-center"]
-    Solr["solr6"]
+    Share["share (extras)"]
+    ControlCenter["control-center (extras)"]
+    Solr["solr6 (extras)"]
     Postgres["postgres"]
     ActiveMQ["activemq"]
     Transform["transform-core-aio"]
@@ -95,6 +115,7 @@ flowchart LR
     HxprApp["hxpr-app"]
     Mongo["mongodb"]
     OpenSearch["opensearch"]
+    OSD["opensearch-dashboards (extras)"]
     Idp["idp"]
     Localstack["localstack"]
     Mockoon["mockoon"]
@@ -174,10 +195,12 @@ flowchart LR
 Notes:
 
 - `proxy` is the only public entrypoint for Alfresco, Share, the UI, batch/sync APIs, and RAG APIs.
-- `content-app` is exposed at `/aca/` in every mode where it is present (`full`, `alfresco`, `demo`).
-- In `STACK_MODE=full` and `STACK_MODE=alfresco`, `/` redirects to `/aca/`.
-- In `STACK_MODE=demo`, `content-lake-app-ui` serves `/` and the customized ACA remains available at `/aca/`.
-- The Nuxeo Web UI and Nuxeo sync routes are active in `STACK_MODE=full`, `STACK_MODE=nuxeo`, and `STACK_MODE=demo`, and require `../nuxeo-deployment` to be running.
+- `content-app` is exposed at `/aca/` in every profile where it is present (`alfresco`, `full`, `demo`).
+- In `alfresco` and `full` profiles, `/` redirects to `/aca/`.
+- In `demo` profile, `content-lake-app-ui` serves `/` and ACA remains at `/aca/`.
+- In `nuxeo` profile, `/` redirects to `/nuxeo/`.
+- The Nuxeo routes are active in `nuxeo`, `full`, and `demo` profiles, and require `../nuxeo-deployment` to be running.
+- Services marked `(extras)` only start when the `extras` profile is also active.
 - `opensearch-dashboards` is published separately on port `5601`, not through `proxy`.
 - Docker Model Runner is an external dependency used by the Content Lake services, not a Compose service in this repository.
 
@@ -191,63 +214,49 @@ Before redesigning the deployment, the non-negotiable Alfresco-side requirements
 - Alfresco Search Services / Solr wired with `secureComms=secret`.
 - A reverse proxy exposing `/`, `/alfresco/`, `/share/`, `/api-explorer/`, `/api/rag/`, and `/solr/`.
 
-This repo now vendors the required ACS module/config pieces locally and builds the rest of the stack around them.
+This repo vendors the required ACS module/config pieces locally and builds the rest of the stack around them.
 
 ## What This Repo Provides
 
 - Local ACS repository image customization under `acs/alfresco`
 - Vendored HXPR bootstrap assets under `hxpr/`
 - Local HXPR Docker build that clones and compiles the requested HXPR branch
-- Remote builds for:
-  - `aborroy/content-lake-app`
-  - `aborroy/alfresco-content-lake-ui`
-- Local or overridden build context support for the demo UI (`content-lake-app-ui`)
-- Docker Compose orchestration for the full stack
-- A split Compose structure using the `include` directive
+- Remote builds for `aborroy/content-lake-app` and `aborroy/alfresco-content-lake-ui`
+- Remote build for `aborroy/content-lake-app-ui` (demo profile) — no local clone needed
+- Docker Compose orchestration split across five focused `compose.*.yaml` files
+- A single nginx config template replacing per-mode nginx files
 
 ## GitHub Projects Used
 
-These are the GitHub projects directly used by this deployment:
-
 - [`aborroy/nuxeo-deployment`](https://github.com/aborroy/nuxeo-deployment)
-  **Optional sibling checkout.** Required only for `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`.
-  It provides the separate local Nuxeo stack that the Nuxeo ingesters connect to at
-  `http://host.docker.internal:8081/nuxeo`.
+  **Optional sibling checkout.** Required only for `nuxeo`, `full`, or `demo` profiles.
+  Provides the separate local Nuxeo stack the ingesters connect to at `http://host.docker.internal:8081/nuxeo`.
 
 - [`aborroy/content-lake-app-deployment`](https://github.com/aborroy/content-lake-app-deployment)
-  This repository. It contains the Compose files, ACS customization, HXPR build wrapper, proxy config, and deployment documentation.
+  This repository.
 
 - [`aborroy/content-lake-app`](https://github.com/aborroy/content-lake-app)
-  Used as the remote BuildKit context for:
-  `batch-ingester`, `live-ingester`, `nuxeo-batch-ingester`, `nuxeo-live-ingester`, `rag-service`, and the `content-lake-repo-model` JAR injected into the Alfresco repository image.
+  Remote BuildKit context for: `batch-ingester`, `live-ingester`, `nuxeo-batch-ingester`, `nuxeo-live-ingester`, `rag-service`, and the `content-lake-repo-model` JAR injected into the Alfresco image.
 
 - [`aborroy/alfresco-content-lake-ui`](https://github.com/aborroy/alfresco-content-lake-ui)
-  Used as the remote BuildKit context for the `content-app` UI image.
+  Remote BuildKit context for the `content-app` image (ACA with RAG extension). **Not a standalone app** — the extension is built into ACA by its Dockerfile.
 
-- `content-lake-app-ui`
-  Used as the local build context for the `content-lake-app-ui` demo image by default
-  (`../content-lake-app-ui`), or via the `CONTENT_LAKE_APP_UI_CONTEXT` override.
+- [`aborroy/content-lake-app-ui`](https://github.com/aborroy/content-lake-app-ui)
+  Remote BuildKit context for the `content-lake-app-ui` demo image (`demo` profile only). **Demo/sandbox only — not for production.** Override with a local path via `CONTENT_LAKE_APP_UI_CONTEXT` if needed.
 
 - [`HylandSoftware/hxpr`](https://github.com/HylandSoftware/hxpr)
-  Cloned during the local HXPR image build to produce the `hxpr-app` service.
-  The branch/ref is controlled by `HXPR_GIT_REF` and `HXPR_GIT_SHA`.
+  Cloned during the HXPR image build. Branch/ref controlled by `HXPR_GIT_REF` and `HXPR_GIT_SHA`.
 
 - [`HylandSoftware/hxp-transform-service`](https://github.com/HylandSoftware/hxp-transform-service)
-  Not cloned directly by Compose, but used through GitHub Packages at
-  `https://maven.pkg.github.com/HylandSoftware/hxp-transform-service`
-  as an authenticated Maven dependency source during the HXPR build.
+  Not cloned directly, but consumed as an authenticated Maven dependency from GitHub Packages during the HXPR build.
 
 ## Prerequisites
 
 - Docker Desktop with Docker Compose v2
-- Docker Model Runner — enable it in Docker Desktop settings, or install `docker-model-plugin` on Linux
+- Docker Model Runner — enable in Docker Desktop settings, or install `docker-model-plugin` on Linux
 - Access to `ghcr.io` for Hyland images
 - Outbound access to GitHub so BuildKit can fetch the remote source contexts
-- HXPR build credentials:
-  - `MAVEN_USERNAME`
-  - `MAVEN_PASSWORD`
-  - `NEXUS_USERNAME`
-  - `NEXUS_PASSWORD`
+- HXPR build credentials: `MAVEN_USERNAME`, `MAVEN_PASSWORD`, `NEXUS_USERNAME`, `NEXUS_PASSWORD`
 - `HXPR_GIT_AUTH_TOKEN` if the HXPR repository cannot be cloned anonymously
 
 ## Getting Credentials
@@ -257,29 +266,17 @@ The HXPR build uses two authenticated artifact sources:
 - GitHub Packages: `https://maven.pkg.github.com/HylandSoftware/hxp-transform-service`
 - Hyland Nexus releases: `https://artifacts.alfresco.com/nexus/content/repositories/hylandsoftware-releases`
 
-Use the following values:
+**`MAVEN_USERNAME`** — your GitHub username.
 
-- `MAVEN_USERNAME`
-  Use your GitHub username.
+**`MAVEN_PASSWORD`** — a GitHub personal access token from [GitHub token settings](https://github.com/settings/tokens).
+Use a classic token from [Generate new token (classic)](https://github.com/settings/tokens/new) with at least `read:packages`.
+If the Hyland package is private in your organisation, your account must have read access to that package, and you may need to authorise the token for SSO.
 
-- `MAVEN_PASSWORD`
-  Create a GitHub personal access token from [GitHub token settings](https://github.com/settings/tokens).
-  For GitHub Packages, the most compatible option is a classic token from [Generate new token (classic)](https://github.com/settings/tokens/new) with at least `read:packages`.
-  If the Hyland package is private in your organization, your GitHub account must also already have read access to that package/repository, and you may need to authorize the token for SSO if GitHub prompts you.
+**`NEXUS_USERNAME` / `NEXUS_PASSWORD`** — credentials for your account on [Hyland Nexus](https://artifacts.alfresco.com/nexus/).
+If you do not already have access, request it from the Hyland/Alfresco team that provided your HXPR build access.
 
-- `NEXUS_USERNAME`
-  Use the username for your account on [Hyland Nexus](https://artifacts.alfresco.com/nexus/).
-  There is no self-service credential flow documented in this repo for that private repository, so if you do not already have access, request it from the Hyland/Alfresco team that provided your HXPR build access.
-
-- `NEXUS_PASSWORD`
-  Use the password paired with your [Hyland Nexus](https://artifacts.alfresco.com/nexus/) account.
-  If you cannot sign in there, treat that as an access issue and request/reset the credentials through the Hyland/Alfresco team that manages your access.
-
-- `HXPR_GIT_AUTH_TOKEN`
-  This is only needed if `https://github.com/HylandSoftware/hxpr.git` is not cloneable anonymously for your account.
-  The simplest option is a GitHub token from [GitHub token settings](https://github.com/settings/tokens):
-  use either a classic token with `repo`, or a fine-grained token from [Fine-grained personal access tokens](https://github.com/settings/personal-access-tokens/new) scoped to the `HylandSoftware/hxpr` repository with read access to repository contents.
-  If your organization enforces SSO or approval, complete that step in GitHub before using the token.
+**`HXPR_GIT_AUTH_TOKEN`** — only needed if `https://github.com/HylandSoftware/hxpr.git` is not cloneable anonymously.
+Use a GitHub classic token with `repo` scope, or a fine-grained token scoped to `HylandSoftware/hxpr` with read access to repository contents.
 
 ## First Run
 
@@ -291,78 +288,67 @@ Use the following values:
 
 2. Enable Docker Model Runner in Docker Desktop.
 
-3. Export the HXPR build credentials:
-
-   ```bash
-   export MAVEN_USERNAME=...
-   export MAVEN_PASSWORD=...
-   export NEXUS_USERNAME=...
-   export NEXUS_PASSWORD=...
-   # optional if needed for the HXPR git clone
-   export HXPR_GIT_AUTH_TOKEN=...
-   ```
-
-4. Pull the models once:
+3. Pull the AI models once:
 
    ```bash
    docker model pull ai/mxbai-embed-large
    docker model pull ai/qwen2.5
    ```
 
-5. Start the desired stack mode:
+4. Put your credentials in `.env.local` (never committed):
 
    ```bash
-   STACK_MODE=alfresco make up
-   STACK_MODE=full make up      # also enables Nuxeo ingesters/routes
-   STACK_MODE=nuxeo make up     # Nuxeo-only, no ACA/Alfresco services
-   STACK_MODE=demo make up      # demo UI at / with Alfresco + Nuxeo routes
+   cat >> .env.local <<'EOF'
+   MAVEN_USERNAME=...
+   MAVEN_PASSWORD=...
+   NEXUS_USERNAME=...
+   NEXUS_PASSWORD=...
+   EOF
    ```
 
-Once healthy, open [http://localhost](http://localhost).
+5. Start the stack:
 
-For any mode that includes Nuxeo:
+   ```bash
+   make up-alfresco      # Alfresco only (most common)
+   make up-full          # Alfresco + Nuxeo (requires ../nuxeo-deployment)
+   make up-nuxeo         # Nuxeo only
+   make up-demo          # demo UI at /
+   ```
+
+   Or use the guided script: `./setup.sh [alfresco|nuxeo|full|demo]`
+
+For any profile that includes Nuxeo:
 
 ```bash
 git clone https://github.com/aborroy/nuxeo-deployment.git ../nuxeo-deployment
 (cd ../nuxeo-deployment && docker compose up -d)
-
-STACK_MODE=full make up
-# or:
-STACK_MODE=nuxeo make up
-# or:
-STACK_MODE=demo make up
+make up-full
 ```
 
-For `STACK_MODE=demo`, the demo UI source is also expected locally:
-
-```bash
-git clone https://github.com/aborroy/content-lake-app-ui.git ../content-lake-app-ui
-```
-
-If `http://localhost/nuxeo/ui` returns `502 Bad Gateway`, check that `../nuxeo-deployment` is
-running and that the Nuxeo server is reachable on `http://localhost:8081/nuxeo`.
+If `http://localhost/nuxeo/ui` returns `502 Bad Gateway`, check that `../nuxeo-deployment` is running and reachable on port 8081.
 
 ## Public Endpoints
 
-Only the proxy is published on the host, on port `80`.
+Only the proxy is published on the host on port `80`.
 
-- `http://localhost/` - Redirects to `/aca/` in `STACK_MODE=full` or `STACK_MODE=alfresco`; demo UI in `STACK_MODE=demo`; redirects to `/nuxeo/` in `STACK_MODE=nuxeo`
-- `http://localhost/aca/` - Customized ACA UI in `STACK_MODE=full`, `STACK_MODE=alfresco`, and `STACK_MODE=demo`
-- `http://localhost/alfresco/` - Alfresco Repository
-- `http://localhost/share/` - Alfresco Share
-- `http://localhost/admin/` - Alfresco Control Center
-- `http://localhost/api-explorer/` - API Explorer
-- `http://localhost/nuxeo/` - Nuxeo Web UI in `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`
-- `http://localhost/api/rag/` - RAG service
-- `http://localhost/api/content-lake/` - Alfresco ingestion/status endpoints in modes that include Alfresco
-- `http://localhost/api/sync/` - Sync API. Alfresco-only in `STACK_MODE=alfresco`, Nuxeo-only in `STACK_MODE=nuxeo`, source-selecting in `STACK_MODE=full` and `STACK_MODE=demo`.
-- `http://localhost:5601/` - OpenSearch Dashboards
+| URL | Available in profiles |
+|---|---|
+| `http://localhost/` | Redirects to `/aca/` (alfresco/full), `/nuxeo/` (nuxeo), or demo UI (demo) |
+| `http://localhost/aca/` | alfresco, full, demo |
+| `http://localhost/alfresco/` | alfresco, full, demo |
+| `http://localhost/share/` | extras |
+| `http://localhost/admin/` | extras |
+| `http://localhost/api-explorer/` | alfresco, full, demo |
+| `http://localhost/nuxeo/` | nuxeo, full, demo |
+| `http://localhost/api/rag/` | all profiles |
+| `http://localhost/api/content-lake/` | alfresco, full, demo |
+| `http://localhost/api/sync/` | all profiles (routes to alfresco or nuxeo ingester via `?sourceType=`) |
+| `http://localhost:5601/` | extras |
 
 ## Nuxeo Demo Content
 
-If you want a known-good sample file in the local Nuxeo stack without going through the Web UI,
-first start `../nuxeo-deployment` and run this repo in `STACK_MODE=full`, `STACK_MODE=nuxeo`, or `STACK_MODE=demo`,
-then use
+To seed a sample file in the local Nuxeo stack without using the Web UI,
+start `../nuxeo-deployment` and run a Nuxeo-enabled profile, then use
 [scripts/create-nuxeo-demo-file.sh](scripts/create-nuxeo-demo-file.sh):
 
 ```bash
@@ -371,11 +357,7 @@ then use
 ./scripts/create-nuxeo-demo-file.sh --input-file README.md --mime-type text/markdown
 ```
 
-The helper creates the demo workspace if needed and attaches the blob through the
-`Blob.AttachOnDocument` automation endpoint. That path is currently more reliable in this local
-`nuxeo:latest` image than the batch upload API for demo seeding.
-
-To verify indexing through the shared proxy afterwards:
+To verify indexing afterwards:
 
 ```bash
 curl -u Administrator:Administrator -X POST 'http://localhost/api/sync/configured?sourceType=nuxeo'
@@ -383,8 +365,7 @@ curl -u Administrator:Administrator -X POST 'http://localhost/api/sync/configure
 
 ## Configuration
 
-Defaults live in `.env`. To override values locally, create a `.env.local` file
-containing only the variables you want to change:
+Defaults live in `.env`. To override locally, create `.env.local` with only the variables you want to change:
 
 ```bash
 # Example .env.local
@@ -394,44 +375,45 @@ PUBLIC_PORT=9090
 
 `.env.local` is listed in `.gitignore` and is never committed.
 
-> **Important:** Docker Compose only auto-loads `.env`. The Makefile passes
-> `--env-file .env.local` automatically when the file exists. If you run
-> `docker compose` directly, add the flag yourself and set `STACK_MODE` explicitly:
->
-> ```bash
-> STACK_MODE=alfresco docker compose --env-file .env.local up --build
-> ```
+> **Note:** Docker Compose only auto-loads `.env`. The Makefile passes `--env-file .env.local`
+> automatically when the file exists. If you run `docker compose` directly, add the flag yourself.
 
-The most important overrides are:
+Key overrides:
 
-- `HXPR_GIT_URL` — defaults to `https://github.com/HylandSoftware/hxpr.git`.
-- `HXPR_GIT_REF` — defaults to `feature/CIN-1509-CreateEmbeddingAPI`.
-- `HXPR_GIT_SHA` — pin to a specific commit SHA for reproducible builds (empty by default).
-- `HXPR_LOCAL_IMAGE` — local image tag used for the built HXPR app.
-- `CONTENT_LAKE_GIT_CONTEXT` — defaults to `https://github.com/aborroy/content-lake-app.git#main`.
-- `CONTENT_LAKE_UI_GIT_CONTEXT` — defaults to `https://github.com/aborroy/alfresco-content-lake-ui.git#main`.
-- `CONTENT_LAKE_APP_UI_CONTEXT` — defaults to `../content-lake-app-ui` and is used by `STACK_MODE=demo`.
-- `ACA_TAG` — defaults to `7.3.0`.
-- `PUBLIC_PORT` — defaults to `80`.
-- `DEMO_UI_PORT` — defaults to `4200` for direct access to the demo UI container during local development.
-- `MODEL_RUNNER_URL`, `EMBEDDING_MODEL`, `LLM_MODEL` — control the LLM inference backend.
-  The default points to Docker Model Runner (`http://model-runner.docker.internal`).
-  Spring AI appends `/v1/...` itself. On Linux, override to `http://host.docker.internal:12434` in `.env.local`.
+| Variable | Default | Description |
+|---|---|---|
+| `HXPR_GIT_URL` | `https://github.com/HylandSoftware/hxpr.git` | HXPR source repo |
+| `HXPR_GIT_REF` | `feature/CIN-1509-CreateEmbeddingAPI` | Branch or tag to build |
+| `HXPR_GIT_SHA` | *(empty)* | Pin to a specific commit SHA for reproducible builds |
+| `HXPR_LOCAL_IMAGE` | `content-lake-app/hxpr-app:local` | Local image tag for the built HXPR app |
+| `CONTENT_LAKE_GIT_CONTEXT` | `https://github.com/aborroy/content-lake-app.git#main` | Java source context |
+| `CONTENT_LAKE_UI_GIT_CONTEXT` | `https://github.com/aborroy/alfresco-content-lake-ui.git#main` | ACA extension context |
+| `CONTENT_LAKE_APP_UI_CONTEXT` | `https://github.com/aborroy/content-lake-app-ui.git#main` | Demo UI context (override to `../content-lake-app-ui` for local dev) |
+| `ACA_TAG` | `7.3.0` | Alfresco Content App version |
+| `PUBLIC_PORT` | `80` | Host port for the proxy |
+| `DEMO_UI_PORT` | `4200` | Direct host port for the demo UI container |
+| `MODEL_RUNNER_URL` | `http://model-runner.docker.internal` | LLM/embedding inference backend |
+| `EMBEDDING_MODEL` | `ai/mxbai-embed-large` | Embedding model |
+| `LLM_MODEL` | `ai/qwen2.5` | Chat/RAG model |
 
-## Day-To-Day Commands
+On Linux, override `MODEL_RUNNER_URL=http://host.docker.internal:12434` in `.env.local`.
+
+## Day-to-day commands
 
 ```bash
-STACK_MODE=full make up      # build and start with both sources
-STACK_MODE=alfresco make up  # build and start with Alfresco only
-STACK_MODE=nuxeo make up     # build and start with Nuxeo only
-STACK_MODE=demo make up      # build and start with the demo UI at /
-make down     # stop and remove containers
-make logs     # follow logs for all services
-make ps       # show running services
-make config   # render the resolved compose configuration
+make up-alfresco      # build and start Alfresco profile
+make up-alfresco-full # build and start Alfresco + extras
+make up-nuxeo         # build and start Nuxeo profile
+make up-full          # build and start full profile
+make up-demo          # build and start demo profile
+make down             # stop and remove containers (volumes preserved)
+make logs             # follow logs for all services
+make ps               # show running services and health
+make config           # render the resolved compose configuration
+make clean            # stop + remove all volumes [DESTRUCTIVE]
 ```
 
-You can also use `docker compose` directly; remember to add `--env-file .env.local` if you have local overrides and set `STACK_MODE` to `full`, `alfresco`, `nuxeo`, or `demo`.
+You can also call `docker compose` directly; remember to add `--env-file .env.local` and `--profile <name>` explicitly.
 
 ## Deploying to AWS EC2
 
@@ -439,16 +421,14 @@ See [docs/DEPLOY_EC2.md](docs/DEPLOY_EC2.md) for a step-by-step guide to running
 
 ## Notes
 
-- The HXPR app is now built from source during `docker compose up --build`, using the `feature/CIN-1509-CreateEmbeddingAPI` branch by default.
-- HXPR source build requires both GitHub Packages credentials and Hyland Nexus credentials. Those are passed into the build as Compose build secrets sourced from environment variables.
-- The Content Lake services still build from source, but Docker now fetches that source itself from GitHub during `docker compose up --build`.
-- The repository model is injected directly into the Alfresco image from this repo, so the scope model no longer depends on a second checkout.
-- Share and Search Services now use the stock Alfresco images directly rather than local wrapper Dockerfiles.
-- The ACA UI is built from `alfresco-content-lake-ui`, which already knows how to layer the RAG extension onto ACA.
-- That ACA UI is exposed at `/aca/` in every mode where it is enabled, so its context path stays stable across stacks.
-- The demo UI is built from `content-lake-app-ui` and is served at `/` only in `STACK_MODE=demo`.
-- HXPR, OpenSearch, MongoDB, LocalStack, Transform services, and the ingesters are internal-only. OpenSearch Dashboards remains published on `5601`.
+- The HXPR app is built from source during `docker compose up --build` using `HXPR_GIT_REF` (default: `feature/CIN-1509-CreateEmbeddingAPI`).
+- HXPR source build requires both GitHub Packages credentials and Hyland Nexus credentials, passed as Compose build secrets sourced from environment variables.
+- All Content Lake Java services (`batch-ingester`, `live-ingester`, ingesters, `rag-service`) build from source fetched directly from GitHub — no local Java checkout needed.
+- The repository model is injected directly into the Alfresco image from this repo.
+- Share, Solr, Admin Center, OpenSearch Dashboards, and the Alfresco live ingester are grouped under the `extras` profile and are not started by default. Use `make up-alfresco-full` or `--profile extras` to include them.
+- The ACA UI is exposed at `/aca/` in every profile where it is enabled, so its context path stays stable across stacks.
+- The demo UI (`content-lake-app-ui`) is served at `/` only in the `demo` profile.
 
 ## Known Assumption
 
-This repo currently assumes the HXPR branch `feature/CIN-1509-CreateEmbeddingAPI` can be built with the credentials you provide for GitHub Packages and Hyland Nexus. If you need a different HXPR branch or repo URL, override `HXPR_GIT_URL` and `HXPR_GIT_REF`.
+This repo currently assumes the HXPR branch `feature/CIN-1509-CreateEmbeddingAPI` can be built with the credentials you provide for GitHub Packages and Hyland Nexus. If you need a different HXPR branch or repo URL, override `HXPR_GIT_URL` and `HXPR_GIT_REF` in `.env.local`.

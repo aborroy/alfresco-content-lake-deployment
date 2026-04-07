@@ -1,84 +1,125 @@
 # =============================================================
-# Alfresco Content Lake — Unified Stack Makefile
+# Content Lake — Deployment Makefile
+# =============================================================
+# Usage:
+#   make up-alfresco        Alfresco + HXPR + RAG + ACA UI  (~17 services)
+#   make up-alfresco-full   Same + Share, Admin, Solr, live sync, dashboards (~22)
+#   make up-nuxeo           Nuxeo + HXPR + RAG  (~13 services)
+#   make up-full            Alfresco + Nuxeo + HXPR + RAG  (~19 services)
+#   make up-demo            Full + standalone demo UI at /  (~20 services)
+#   make down               Stop all services
+#   make logs               Follow logs
+#   make ps                 Show service status
+#   make config             Dry-run: render resolved compose configuration
+#   make clean              Stop + remove all volumes  [DESTRUCTIVE]
 # =============================================================
 
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
-STACK_MODE ?= full
-VALID_STACK_MODES := full alfresco nuxeo demo
-
-ifeq (,$(filter $(STACK_MODE),$(VALID_STACK_MODES)))
-$(error STACK_MODE must be one of: $(VALID_STACK_MODES))
-endif
-
-# If .env.local exists:
-#  1. Pass --env-file so its values are used for compose-file interpolation.
-#  2. Prefix every compose command with "set -a && . .env.local && set +a &&"
-#     so Docker secrets (which read os.Getenv, not the --env-file context)
-#     can find MAVEN_USERNAME, MAVEN_PASSWORD, NEXUS_* and HXPR_GIT_AUTH_TOKEN.
-ifneq (,$(wildcard .env.local))
-  ENV_ARGS  := --env-file .env.local
-else
-  ENV_ARGS  :=
-endif
-
 LOAD_ENV := set -a && . ./.env && if [ -f ./.env.local ]; then . ./.env.local; fi && set +a &&
-RAG_PERMISSION_SOURCE_IDS_EXPR := $${RAG_PERMISSION_SOURCE_IDS:-$$(if [ "$(STACK_MODE)" = "alfresco" ]; then printf '%s' "$${HXPR_REPOSITORY_ID:-default}"; elif [ "$(STACK_MODE)" = "nuxeo" ]; then printf '%s' "$${NUXEO_SOURCE_ID:-local}"; else printf '%s,%s' "$${HXPR_REPOSITORY_ID:-default}" "$${NUXEO_SOURCE_ID:-local}"; fi)}
-DC := $(LOAD_ENV) STACK_MODE=$(STACK_MODE) COMPOSE_PROFILES=$(STACK_MODE) RAG_PERMISSION_SOURCE_IDS="$(RAG_PERMISSION_SOURCE_IDS_EXPR)" docker compose $(ENV_ARGS)
 
-.PHONY: help up down logs ps config clean
+ifneq (,$(wildcard .env.local))
+  ENV_ARGS := --env-file .env.local
+else
+  ENV_ARGS :=
+endif
+
+DC := $(LOAD_ENV) docker compose $(ENV_ARGS)
+
+.PHONY: help up-alfresco up-alfresco-full up-nuxeo up-full up-demo down logs ps config clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | \
-	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-	@echo "  STACK_MODE=<full|alfresco|nuxeo|demo> selects the deployed source set (default: full)."
+	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-up: ## Build images (if needed) and start all services
-	$(DC) up --build -d
-	@echo ""
-	@set -a; . ./.env; \
-	  if [ -f ./.env.local ]; then . ./.env.local; fi; \
-	  set +a; \
-	  host="$${SERVER_NAME:-localhost}"; \
-	  port="$${PUBLIC_PORT:-80}"; \
-	  mode="$(STACK_MODE)"; \
-	  base_url="http://$$host"; \
-	  if [ "$$port" != "80" ]; then base_url="$$base_url:$$port"; fi; \
-	  echo "Stack is starting in '$$mode' mode. Key endpoints (once healthy):"; \
-	  echo "  RAG Service          → $$base_url/api/rag"; \
-	  if [ "$$mode" = "full" ] || [ "$$mode" = "alfresco" ]; then \
-	    echo "  ACA / Content Lake UI → $$base_url/aca/"; \
-	    echo "  Alfresco             → $$base_url/alfresco"; \
-	    echo "  Share                → $$base_url/share"; \
-	    echo "  Control Center       → $$base_url/admin"; \
-	  fi; \
-	  if [ "$$mode" = "demo" ]; then \
-	    echo "  Demo App             → $$base_url/"; \
-	    echo "  ACA / Content Lake UI → $$base_url/aca/"; \
-	    echo "  Alfresco             → $$base_url/alfresco"; \
-	    echo "  Share                → $$base_url/share"; \
-	    echo "  Control Center       → $$base_url/admin"; \
-	  fi; \
-	  if [ "$$mode" = "full" ] || [ "$$mode" = "nuxeo" ] || [ "$$mode" = "demo" ]; then \
-	    echo "  Nuxeo Web UI         → $$base_url/nuxeo/ui/"; \
-	  fi
-	@echo ""
+up-alfresco: ## Alfresco source — core services (~17)
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
+	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
+	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default}}" \
+	  docker compose $(ENV_ARGS) --profile alfresco up --build -d
+	@$(call _urls,alfresco)
 
-down: ## Stop and remove containers (preserves volumes)
-	$(DC) down
+up-alfresco-full: ## Alfresco source — core + Share, Admin, Solr, live sync (~22)
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
+	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
+	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default}}" \
+	  docker compose $(ENV_ARGS) --profile alfresco --profile extras up --build -d
+	@$(call _urls,alfresco)
 
-logs: ## Follow logs for all services
+up-nuxeo: ## Nuxeo source — start ../nuxeo-deployment first, then this
+	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
+	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=nuxeo-batch-ingester:9093 \
+	  NGINX_ROOT_DIRECTIVE="return 302 /nuxeo/;" \
+	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${NUXEO_SOURCE_ID:-local}}" \
+	  docker compose $(ENV_ARGS) --profile nuxeo up --build -d
+	@$(call _urls,nuxeo)
+
+up-full: ## Alfresco + Nuxeo — start ../nuxeo-deployment first, then this
+	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
+	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
+	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
+	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default},$${NUXEO_SOURCE_ID:-local}}" \
+	  docker compose $(ENV_ARGS) --profile full up --build -d
+	@$(call _urls,full)
+
+up-demo: ## Full stack + demo UI at / — start ../nuxeo-deployment first, then this
+	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
+	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
+	  NGINX_ROOT_DIRECTIVE="proxy_pass http://content-lake-app-ui:80;" \
+	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default},$${NUXEO_SOURCE_ID:-local}}" \
+	  docker compose $(ENV_ARGS) --profile demo up --build -d
+	@$(call _urls,demo)
+
+down: ## Stop and remove containers (data volumes preserved)
+	$(DC) --profile '*' down
+	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml down 2>/dev/null || true
+
+logs: ## Follow logs for all running services
 	$(DC) logs -f
 
-ps: ## Show running services and their status
+ps: ## Show running services and health status
 	$(DC) ps
 
-config: ## Render the resolved docker compose configuration
-	$(DC) config
+config: ## Dry-run: render the resolved compose configuration
+	$(LOAD_ENV) \
+	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
+	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
+	  docker compose $(ENV_ARGS) config
 
-clean: ## Stop containers and remove all volumes (DESTRUCTIVE)
+clean: ## Stop containers and remove ALL volumes [DESTRUCTIVE — wipes all data]
 	@echo "WARNING: This removes all persistent data (Alfresco, MongoDB, OpenSearch, etc.)"
 	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
-	$(DC) down -v
+	$(DC) --profile '*' down -v
+	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml down -v 2>/dev/null || true
+
+# ── Internal ──────────────────────────────────────────────────────────────────
+
+define _urls
+	@set -a; . ./.env; if [ -f ./.env.local ]; then . ./.env.local; fi; set +a; \
+	  base="http://$${SERVER_NAME:-localhost}"; \
+	  p="$${PUBLIC_PORT:-80}"; \
+	  [ "$$p" != "80" ] && base="$$base:$$p"; \
+	  echo ""; \
+	  echo "Stack starting ($(1)). Endpoints once healthy:"; \
+	  echo "  RAG API  → $$base/api/rag"; \
+	  if [ "$(1)" != "nuxeo" ]; then \
+	    echo "  ACA      → $$base/aca/"; \
+	    echo "  Alfresco → $$base/alfresco"; \
+	  fi; \
+	  if [ "$(1)" != "alfresco" ]; then \
+	    echo "  Nuxeo    → $$base/nuxeo/ui/"; \
+	  fi; \
+	  if [ "$(1)" = "demo" ]; then \
+	    echo "  Demo UI  → $$base/"; \
+	  fi; \
+	  echo ""
+endef

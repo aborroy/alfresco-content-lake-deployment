@@ -1,10 +1,11 @@
+# compose.hxpr.yaml — HXPR platform services
+# Part of the content-lake-app stack; loaded via include: in compose.yaml.
+# Profiles: alfresco, nuxeo, full, demo (core); extras (OpenSearch Dashboards)
+
 services:
+
   idp:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: ghcr.io/hylandexperience/hxp/iam/api.mock:${IDP_TAG:-26.35.14}
     hostname: idp
     volumes:
@@ -13,11 +14,7 @@ services:
       - stack
 
   mongodb:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: mongo:${MONGODB_TAG:-8.2.5}
     hostname: mongo
     volumes:
@@ -32,11 +29,7 @@ services:
       - stack
 
   opensearch:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: opensearchproject/opensearch:${OPENSEARCH_TAG:-3.5.0}
     hostname: opensearch
     environment:
@@ -53,30 +46,20 @@ services:
     networks:
       - stack
 
+  # extras: OpenSearch Dashboards — operational visibility
   opensearch-dashboards:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [extras]
     image: opensearchproject/opensearch-dashboards:${OPENSEARCH_TAG:-3.5.0}
     ports:
       - "5601:5601"
     environment:
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
-    depends_on:
-      opensearch:
-        condition: service_healthy
     networks:
       - stack
 
   localstack:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: localstack/localstack:${LOCALSTACK_TAG:-4.13.1}
     environment:
       SERVICES: s3,sts,sqs,sns
@@ -98,11 +81,7 @@ services:
       - stack
 
   mockoon:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: mockoon/cli:${MOCKOON_TAG:-9.3.0}
     hostname: mockoon
     volumes:
@@ -112,11 +91,7 @@ services:
       - stack
 
   aio:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: ghcr.io/hylandsoftware/hxp-transform-aio:${HXTS_TAG:-3.0.566}
     environment:
       SFS_URL: http://rest:8098/private/file
@@ -130,11 +105,7 @@ services:
       - stack
 
   router:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: ghcr.io/hylandsoftware/hxp-transform-router:${HXTS_TAG:-3.0.566}
     environment:
       SFS_URL: http://rest:8098/private/file
@@ -148,11 +119,7 @@ services:
       - stack
 
   rest:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     image: ghcr.io/hylandsoftware/hxp-transform-rest:${HXTS_TAG:-3.0.566}
     environment:
       REST_AUTHENTICATED: "false"
@@ -174,12 +141,8 @@ services:
       - stack
 
   hxpr-app:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
-    image: "${HXPR_LOCAL_IMAGE:-alfresco-content-lake/hxpr-app:local}"
+    profiles: [alfresco, nuxeo, full, demo]
+    image: "${HXPR_LOCAL_IMAGE:-content-lake-app/hxpr-app:local}"
     build:
       context: .
       dockerfile: ./hxpr/Dockerfile

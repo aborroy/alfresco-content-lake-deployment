@@ -1,0 +1,67 @@
+# compose.ui.yaml — UI services and reverse proxy
+# Part of the content-lake-app stack; loaded via include: in compose.yaml.
+# Profiles: alfresco, full, demo (content-app + proxy); demo only (content-lake-app-ui)
+
+services:
+
+  content-app:
+    profiles: [alfresco, full, demo]
+    build:
+      context: "${CONTENT_LAKE_UI_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake-ui.git#main}"
+      dockerfile: docker/Dockerfile
+      args:
+        ACA_TAG: ${ACA_TAG:-7.3.0}
+    environment:
+      APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
+      APP_CONFIG_RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
+    networks:
+      - stack
+
+  # Demo UI — standalone SPA for showcasing RAG without ACA (demo profile only)
+  content-lake-app-ui:
+    profiles: [demo]
+    build:
+      context: "${CONTENT_LAKE_APP_UI_CONTEXT:-https://github.com/aborroy/content-lake-app-ui.git#main}"
+    ports:
+      - target: 80
+        published: "${DEMO_UI_PORT:-4200}"
+        host_ip: "${BIND_IP:-0.0.0.0}"
+        protocol: tcp
+    environment:
+      ALFRESCO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
+      NUXEO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}/nuxeo
+      RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}/api/rag
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rag-service:
+        condition: service_started
+    networks:
+      - stack
+
+  # ── Reverse proxy ───────────────────────────────────────────────────────────
+
+  proxy:
+    profiles: [alfresco, nuxeo, full, demo]
+    image: nginx:stable-alpine
+    ports:
+      - target: 80
+        published: "${PUBLIC_PORT:-80}"
+        host_ip: "${BIND_IP:-0.0.0.0}"
+        protocol: tcp
+    environment:
+      NGINX_SYNC_DEFAULT_BACKEND: ${NGINX_SYNC_DEFAULT_BACKEND:-batch-ingester:9090}
+      NGINX_ROOT_DIRECTIVE: ${NGINX_ROOT_DIRECTIVE:-return 302 /aca/;}
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    command: >-
+      /bin/sh -c "envsubst '$$NGINX_SYNC_DEFAULT_BACKEND $$NGINX_ROOT_DIRECTIVE'
+      < /etc/nginx/templates/default.conf.template
+      > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rag-service:
+        condition: service_started
+    networks:
+      - stack

@@ -1,9 +1,14 @@
+# compose.content-lake.yaml — Content Lake ingestion and RAG services
+# Part of the content-lake-app stack; loaded via include: in compose.yaml.
+# Profiles: alfresco, full, demo (Alfresco ingesters); nuxeo, full, demo (Nuxeo ingesters);
+#           extras (live ingesters); all profiles (rag-service)
+
 services:
+
+  # ── Alfresco ingesters ──────────────────────────────────────────────────────
+
   batch-ingester:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [alfresco, full, demo]
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -78,11 +83,9 @@ services:
     networks:
       - stack
 
+  # extras: Alfresco live ingester (real-time event-driven sync via ActiveMQ)
   live-ingester:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [extras]
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -148,22 +151,13 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ai/mxbai-embed-large}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      alfresco:
-        condition: service_healthy
-      activemq:
-        condition: service_started
-      hxpr-app:
-        condition: service_healthy
     networks:
       - stack
 
+  # ── RAG service ─────────────────────────────────────────────────────────────
+
   rag-service:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
+    profiles: [alfresco, nuxeo, full, demo]
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -241,11 +235,12 @@ services:
     networks:
       - stack
 
+  # ── Nuxeo ingesters ─────────────────────────────────────────────────────────
+  # Requires the Nuxeo server running separately:
+  #   docker compose -f ../nuxeo-deployment/compose.yaml up -d
+
   nuxeo-batch-ingester:
-    profiles:
-      - full
-      - nuxeo
-      - demo
+    profiles: [nuxeo, full, demo]
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -279,7 +274,6 @@ services:
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
         RUN addgroup -S app && adduser -S -G app app
-        RUN mkdir -p /data && chown app:app /data
         WORKDIR /app
         COPY --from=build /layers/dependencies/ ./
         COPY --from=build /layers/snapshot-dependencies/ ./
@@ -296,9 +290,11 @@ services:
       NUXEO_USERNAME: ${NUXEO_USERNAME:-Administrator}
       NUXEO_PASSWORD: ${NUXEO_PASSWORD:-Administrator}
       NUXEO_SOURCE_ID: ${NUXEO_SOURCE_ID:-local}
+      NUXEO_INCLUDED_ROOT_1: ${NUXEO_INCLUDED_ROOT_1:-/default-domain/workspaces}
+      NUXEO_DISCOVERY_MODE: ${NUXEO_DISCOVERY_MODE:-CHILDREN}
       HXPR_URL: http://hxpr-app:8080
       HXPR_REPOSITORY_ID: ${HXPR_REPOSITORY_ID}
-      HXPR_TARGET_PATH: ${HXPR_TARGET_PATH}
+      HXPR_TARGET_PATH: ${HXPR_NUXEO_TARGET_PATH:-/nuxeo-sync}
       HXPR_IDP_TOKEN_URL: http://idp:8080/idp/connect/token
       HXPR_IDP_CLIENT_ID: ${HXPR_IDP_CLIENT_ID}
       HXPR_IDP_CLIENT_SECRET: ${HXPR_IDP_CLIENT_SECRET}
@@ -315,10 +311,7 @@ services:
       - stack
 
   nuxeo-live-ingester:
-    profiles:
-      - full
-      - nuxeo
-      - demo
+    profiles: [nuxeo, full, demo]
     build:
       context: "${CONTENT_LAKE_GIT_CONTEXT:-https://github.com/aborroy/content-lake-app.git#main}"
       dockerfile_inline: |
@@ -369,9 +362,12 @@ services:
       NUXEO_USERNAME: ${NUXEO_USERNAME:-Administrator}
       NUXEO_PASSWORD: ${NUXEO_PASSWORD:-Administrator}
       NUXEO_SOURCE_ID: ${NUXEO_SOURCE_ID:-local}
+      NUXEO_LIVE_AUDIT_ENABLED: ${NUXEO_LIVE_AUDIT_ENABLED:-true}
+      NUXEO_LIVE_AUDIT_CURSOR_FILE: ${NUXEO_LIVE_AUDIT_CURSOR_FILE:-/data/audit-cursor.json}
+      NUXEO_INCLUDED_ROOT_1: ${NUXEO_INCLUDED_ROOT_1:-/default-domain/workspaces}
       HXPR_URL: http://hxpr-app:8080
       HXPR_REPOSITORY_ID: ${HXPR_REPOSITORY_ID}
-      HXPR_TARGET_PATH: ${HXPR_TARGET_PATH}
+      HXPR_TARGET_PATH: ${HXPR_NUXEO_TARGET_PATH:-/nuxeo-sync}
       HXPR_IDP_TOKEN_URL: http://idp:8080/idp/connect/token
       HXPR_IDP_CLIENT_ID: ${HXPR_IDP_CLIENT_ID}
       HXPR_IDP_CLIENT_SECRET: ${HXPR_IDP_CLIENT_SECRET}
@@ -382,75 +378,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - nuxeo-live-cursor:/data
+      - nuxeo-live-audit-data:/data
     depends_on:
       hxpr-app:
         condition: service_healthy
     networks:
       - stack
-
-  content-app:
-    profiles:
-      - full
-      - alfresco
-      - demo
-    build:
-      context: "${CONTENT_LAKE_UI_GIT_CONTEXT:-https://github.com/aborroy/alfresco-content-lake-ui.git#main}"
-      dockerfile: docker/Dockerfile
-      args:
-        ACA_TAG: ${ACA_TAG:-7.3.0}
-    environment:
-      APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
-      APP_CONFIG_RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
-    networks:
-      - stack
-
-  content-lake-app-ui:
-    profiles:
-      - demo
-    build:
-      context: "${CONTENT_LAKE_APP_UI_CONTEXT:-../content-lake-app-ui}"
-    ports:
-      - target: 80
-        published: "${DEMO_UI_PORT:-4200}"
-        host_ip: "${BIND_IP:-0.0.0.0}"
-        protocol: tcp
-    # The container's nginx proxies /api/rag, /alfresco/, /nuxeo/ to the
-    # backend services on the Docker network — same-origin from the browser,
-    # so no CORS configuration is needed.
-    environment:
-      ALFRESCO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
-      NUXEO_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/nuxeo
-      RAG_URL: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/api/rag
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      rag-service:
-        condition: service_started
-    networks:
-      - stack
-
-  proxy:
-    profiles:
-      - full
-      - alfresco
-      - nuxeo
-      - demo
-    image: nginx:stable-alpine
-    ports:
-      - target: 80
-        published: "${PUBLIC_PORT:-8080}"
-        host_ip: "${BIND_IP:-0.0.0.0}"
-        protocol: tcp
-    volumes:
-      - ./nginx/nginx.${STACK_MODE:-full}.conf:/etc/nginx/nginx.conf:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      rag-service:
-        condition: service_started
-    networks:
-      - stack
-
-volumes:
-  nuxeo-live-cursor:

@@ -1,9 +1,11 @@
+# compose.alfresco.yaml — Alfresco content services
+# Part of the content-lake-app stack; loaded via include: in compose.yaml.
+# Profiles: alfresco, full, demo (core); extras (Share, Control Center, Solr)
+
 services:
+
   postgres:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [alfresco, full, demo]
     image: postgres:${POSTGRES_TAG:-15.6}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -21,19 +23,13 @@ services:
       - stack
 
   activemq:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [alfresco, full, demo]
     image: alfresco/alfresco-activemq:${ACTIVEMQ_TAG:-5.18-jre17-rockylinux8}
     networks:
       - stack
 
   alfresco:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [alfresco, full, demo]
     build:
       context: ./acs/alfresco
       additional_contexts:
@@ -65,18 +61,18 @@ services:
         -Dindex.subsystem.name=solr6
         -Dsolr.sharedSecret=${SOLR_SECRET}
         -Dalfresco.host=${SERVER_NAME:-localhost}
-        -Dalfresco.port=${PUBLIC_PORT:-8080}
-        -Dapi-explorer.url=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/api-explorer
+        -Dalfresco.port=${PUBLIC_PORT:-80}
+        -Dapi-explorer.url=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}/api-explorer
         -Dalfresco.protocol=http
         -Dshare.host=${SERVER_NAME:-localhost}
-        -Dshare.port=${PUBLIC_PORT:-8080}
+        -Dshare.port=${PUBLIC_PORT:-80}
         -Dshare.protocol=http
-        -Daos.baseUrlOverwrite=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/alfresco/aos
+        -Daos.baseUrlOverwrite=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}/alfresco/aos
         -Dmessaging.broker.url="failover:(nio://activemq:61616)?timeout=3000&jms.useCompression=true"
         -Ddeployment.method=DOCKER_COMPOSE
         -Dcsrf.filter.enabled=false
         -Dopencmis.server.override=true
-        -Dopencmis.server.value=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
+        -Dopencmis.server.value=http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
         -DlocalTransform.core-aio.url=http://transform-core-aio:8090/
         -Dhttpclient.config.transform.connectionRequestTimeout=500000
         -Dalfresco.restApi.basicAuthScheme=true
@@ -108,11 +104,9 @@ services:
     networks:
       - stack
 
+  # extras: Solr full-text index (Alfresco works without it for RAG use cases)
   solr6:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [extras]
     image: alfresco/alfresco-search-services:${SEARCH_CE_TAG:-2.0.17}
     environment:
       SOLR_ALFRESCO_HOST: alfresco
@@ -125,23 +119,11 @@ services:
         -Dalfresco.secureComms.secret=${SOLR_SECRET}
     volumes:
       - solr-data:/opt/alfresco-search-services/data
-    depends_on:
-      alfresco:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/share"]
-      interval: 20s
-      timeout: 2s
-      retries: 3
-      start_period: 15s
     networks:
       - stack
 
   transform-core-aio:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [alfresco, full, demo]
     image: alfresco/alfresco-transform-core-aio:${TRANSFORM_ENGINE_TAG:-5.2.4}
     environment:
       JAVA_OPTS: >-
@@ -151,42 +133,32 @@ services:
     networks:
       - stack
 
+  # extras: Alfresco Share UI
   share:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [extras]
     image: alfresco/alfresco-share:${SHARE_TAG:-25.3.0}
     environment:
-      CSRF_FILTER_ORIGIN: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
-      CSRF_FILTER_REFERER: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}/share/.*
+      CSRF_FILTER_ORIGIN: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
+      CSRF_FILTER_REFERER: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}/share/.*
       REPO_HOST: alfresco
       REPO_PORT: "8080"
       JAVA_OPTS: >-
         -XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=80
         -Dalfresco.host=${SERVER_NAME:-localhost}
-        -Dalfresco.port=${PUBLIC_PORT:-8080}
+        -Dalfresco.port=${PUBLIC_PORT:-80}
         -Dalfresco.context=alfresco
         -Dalfresco.protocol=http
-    depends_on:
-      alfresco:
-        condition: service_healthy
     networks:
       - stack
 
+  # extras: Alfresco Admin Control Center
   control-center:
-    profiles:
-      - full
-      - alfresco
-      - demo
+    profiles: [extras]
     image: quay.io/alfresco/alfresco-control-center:${CONTROL_CENTER_TAG:-10.2.0}
     environment:
-      APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-8080}
+      APP_CONFIG_ECM_HOST: http://${SERVER_NAME:-localhost}:${PUBLIC_PORT:-80}
       APP_CONFIG_AUTH_TYPE: BASIC
       APP_CONFIG_PROVIDER: ECM
       BASE_PATH: /admin
-    depends_on:
-      alfresco:
-        condition: service_healthy
     networks:
       - stack
