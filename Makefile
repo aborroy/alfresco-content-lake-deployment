@@ -34,9 +34,9 @@ help: ## Show this help
 
 up-alfresco: ## Alfresco source — core services (~17)
 	$(LOAD_ENV) \
+	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
-	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default}}" \
 	  docker compose $(ENV_ARGS) --profile alfresco up --build -d
 	@$(call _urls,alfresco)
 
@@ -44,9 +44,9 @@ up-nuxeo: ## Nuxeo source — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
+	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=nuxeo-batch-ingester:9093 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /nuxeo/;" \
-	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${NUXEO_SOURCE_ID:-local}}" \
 	  docker compose $(ENV_ARGS) --profile nuxeo up --build -d
 	@$(call _urls,nuxeo)
 
@@ -54,9 +54,9 @@ up-full: ## Alfresco + Nuxeo — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
+	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
-	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default},$${NUXEO_SOURCE_ID:-local}}" \
 	  docker compose $(ENV_ARGS) --profile full up --build -d
 	@$(call _urls,full)
 
@@ -64,9 +64,9 @@ up-demo: ## Full stack + demo UI at / — start ../nuxeo-deployment first, then 
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
+	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="proxy_pass http://content-lake-app-ui:80;" \
-	  RAG_PERMISSION_SOURCE_IDS="$${RAG_PERMISSION_SOURCE_IDS:-$${HXPR_REPOSITORY_ID:-default},$${NUXEO_SOURCE_ID:-local}}" \
 	  docker compose $(ENV_ARGS) --profile demo up --build -d
 	@$(call _urls,demo)
 
