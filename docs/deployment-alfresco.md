@@ -148,7 +148,7 @@ If you run `docker compose` directly: `STACK_MODE=alfresco docker compose --env-
 | `HXPR_LOCAL_IMAGE` | — | Local tag for the built HXPR app |
 | `CONTENT_LAKE_GIT_CONTEXT` | `https://github.com/aborroy/alfresco-content-lake.git#main` | Content Lake source context |
 | `CONTENT_LAKE_UI_GIT_CONTEXT` | `https://github.com/aborroy/alfresco-content-lake-ui.git#main` | UI source context |
-| `ACA_TAG` | `7.3.0` | Alfresco Content App version |
+| `ACA_TAG` | `7.4.1` | Alfresco Content App version |
 | `PUBLIC_PORT` | `80` | Host port for the reverse proxy |
 | `MODEL_RUNNER_URL` | `http://model-runner.docker.internal` | LLM inference backend |
 | `EMBEDDING_MODEL` | `ai/mxbai-embed-large` | Embedding model |

@@ -375,7 +375,7 @@ Key overrides:
 | `CONTENT_LAKE_GIT_CONTEXT` | `https://github.com/aborroy/content-lake-app.git#main` | Java source context |
 | `CONTENT_LAKE_UI_GIT_CONTEXT` | `https://github.com/aborroy/alfresco-content-lake-ui.git#main` | ACA extension context |
 | `CONTENT_LAKE_APP_UI_CONTEXT` | `https://github.com/aborroy/content-lake-app-ui.git#main` | Demo UI context (override to `../content-lake-app-ui` for local dev) |
-| `ACA_TAG` | `7.3.0` | Alfresco Content App version |
+| `ACA_TAG` | `7.4.1` | Alfresco Content App version |
 | `PUBLIC_PORT` | `80` | Host port for the proxy |
 | `DEMO_UI_PORT` | `4200` | Direct host port for the demo UI container |
 | `MODEL_RUNNER_URL` | `http://model-runner.docker.internal` | LLM/embedding inference backend |
