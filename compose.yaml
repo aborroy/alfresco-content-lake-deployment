@@ -10,6 +10,7 @@ volumes:
   postgres-data:
   solr-data:
   mongodb-data:
+  opensearch-data:
   localstack-data:
   shared-file-store:
   nuxeo-live-audit-data:

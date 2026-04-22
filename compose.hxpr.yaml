@@ -37,6 +37,8 @@ services:
       cluster.routing.allocation.disk.threshold_enabled: "false"
       plugins.security.disabled: "true"
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-Hyland_Pass1!}
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 20s
