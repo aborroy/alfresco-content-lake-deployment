@@ -2,7 +2,7 @@
 
 This guide covers deploying the full stack on a **g4dn.xlarge** (4 vCPU / 16 GB RAM / NVIDIA T4 GPU) running Ubuntu.
 
-The same Docker Model Runner used on Docker Desktop is also available on Linux via the `docker-model-plugin` package, keeping deployment assets and make commands identical across environments. On a GPU instance, Docker Model Runner automatically uses the T4 for inference, giving dramatically faster embedding and LLM response times compared to CPU-only instances. The only Linux-specific difference is setting `MODEL_RUNNER_URL` to `http://host.docker.internal:12434` in `.env.local` — the port Docker Model Runner binds to on Linux. The `host.docker.internal:host-gateway` mapping is already embedded in `compose.rag.yaml` so no extra compose file is needed.
+The same Docker Model Runner used on Docker Desktop is also available on Linux via the `docker-model-plugin` package, keeping deployment assets and make commands identical across environments. On a GPU instance, Docker Model Runner automatically uses the T4 for inference, giving dramatically faster embedding and LLM response times compared to CPU-only instances. The only Linux-specific difference is setting `MODEL_RUNNER_URL` to `http://host.docker.internal:12434` in `.env.local`, the port Docker Model Runner binds to on Linux. The `host.docker.internal:host-gateway` mapping is already embedded in `compose.rag.yaml` so no extra compose file is needed.
 
 ## 1. Launch the EC2 Instance
 
@@ -134,7 +134,7 @@ docker model pull ai/mxbai-embed-large
 docker model pull ai/qwen2.5
 ```
 
-> **Model choice on g4dn.xlarge (T4, 15 GB VRAM):** `ai/gpt-oss` is a ~13 GB reasoning model that leaves almost no headroom alongside the embedding model (~0.7 GB). On a T4 this causes the model runner to evict one model when the other is needed, adding a **3–5 minute cold-start penalty** to every RAG query. `ai/qwen2.5` is the recommended default — see benchmarks below.
+> **Model choice on g4dn.xlarge (T4, 15 GB VRAM):** `ai/gpt-oss` is a ~13 GB reasoning model that leaves almost no headroom alongside the embedding model (~0.7 GB). On a T4 this causes the model runner to evict one model when the other is needed, adding a **3–5 minute cold-start penalty** to every RAG query. `ai/qwen2.5` is the recommended default, see benchmarks below.
 >
 > **Benchmarks on g4dn.xlarge (T4, warm model):**
 >
@@ -183,7 +183,7 @@ MODEL_RUNNER_URL=http://host.docker.internal:12434
 EOF
 ```
 
-> `EMBEDDING_MODEL` is unchanged. `LLM_MODEL` defaults to `ai/qwen2.5` — see the benchmarks in step 6 for model choice guidance.
+> `EMBEDDING_MODEL` is unchanged. `LLM_MODEL` defaults to `ai/qwen2.5`, see the benchmarks in step 6 for model choice guidance.
 
 ## 10. Export Build Credentials
 
@@ -247,16 +247,16 @@ make clean    # remove containers AND all volumes (destructive)
 
 ## 15. Saving Costs
 
-- Stop the EC2 instance when not in use — you are only charged for storage while stopped (~$0.10/GB/month for gp3).
+- Stop the EC2 instance when not in use, you are only charged for storage while stopped (~$0.10/GB/month for gp3).
 - EBS volumes persist across instance stops, so Alfresco data, Solr index, MongoDB, and pulled model weights are all retained.
 
 ## 16. Upgrading to g5.xlarge (NVIDIA A10G, 24 GB VRAM)
 
-The **g5.xlarge** provides an NVIDIA A10G GPU with 24 GB VRAM, which allows `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) to reside in VRAM simultaneously — eliminating the 3–5 minute cold-start eviction penalty present on the T4.
+The **g5.xlarge** provides an NVIDIA A10G GPU with 24 GB VRAM, which allows `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) to reside in VRAM simultaneously, eliminating the 3–5 minute cold-start eviction penalty present on the T4.
 
 **Cost difference (us-east-1, on-demand):** ~$0.48/hr more than g4dn.xlarge ($1.006 vs $0.526).
 
-### Option A — Stop and resize an existing instance (recommended)
+### Option A. Stop and resize an existing instance (recommended)
 
 This preserves all EBS data (Alfresco content, Solr index, MongoDB, pulled model weights).
 
@@ -289,11 +289,11 @@ aws ec2 describe-instances \
 
 > If you have an Elastic IP attached to the instance, the address is preserved across the stop/start.
 
-### Option B — Launch a fresh g5.xlarge instance
+### Option B. Launch a fresh g5.xlarge instance
 
-Follow the full deployment guide from step 1, selecting `g5.xlarge` as the instance type. The NVIDIA driver version (`nvidia-driver-535`) and all other steps are identical — the A10G is supported by the same driver series.
+Follow the full deployment guide from step 1, selecting `g5.xlarge` as the instance type. The NVIDIA driver version (`nvidia-driver-535`) and all other steps are identical.  the A10G is supported by the same driver series.
 
-### After the resize — enable gpt-oss
+### After the resize, enable gpt-oss
 
 Once the instance is running on g5.xlarge, pull the model and update your `.env.local`:
 
@@ -347,9 +347,9 @@ All three containers (`tei`, `vllm`, `ai-proxy`) run with `--network host` so th
 |-----------|-------|--------------|
 | vLLM | `Qwen/Qwen2.5-3B-Instruct-AWQ` (4-bit AWQ, same family as `ai/qwen2.5`) | ~9.6 GB at `--gpu-memory-utilization 0.60` (model + KV cache) |
 | TEI | `mixedbread-ai/mxbai-embed-large-v1` (same weights as `ai/mxbai-embed-large`) | ~0.7 GB |
-| **Total** | | **~10.3 GB** — ~5.7 GB headroom |
+| **Total** | | **~10.3 GB**, ~5.7 GB headroom |
 
-### Step 1 — Stop Docker Model Runner
+### Step 1. Stop Docker Model Runner
 
 ```bash
 sudo systemctl stop docker-model-runner
@@ -360,7 +360,7 @@ docker model stop --all 2>/dev/null || true
 > Docker Model Runner is no longer needed once the proxy is running. Stopping it frees the CPU
 > overhead it consumes even when idle and ensures nothing else claims port 12434.
 
-### Step 2 — Create the nginx routing config
+### Step 2. Create the nginx routing config
 
 ```bash
 sudo mkdir -p /opt/ai-proxy
@@ -388,7 +388,7 @@ http {
 EOF
 ```
 
-### Step 3 — Start TEI (embeddings)
+### Step 3. Start TEI (embeddings)
 
 The T4 uses NVIDIA Turing architecture (SM75); the `turing-latest` TEI image is required.
 
@@ -405,9 +405,9 @@ docker run -d \
 ```
 
 > The model (~0.6 GB) is downloaded from HuggingFace on first start and cached in `/opt/models`.
-> No HuggingFace token is required — the model is public.
+> No HuggingFace token is required, the model is public.
 
-### Step 4 — Start vLLM (LLM inference)
+### Step 4. Start vLLM (LLM inference)
 
 ```bash
 docker run -d \
@@ -428,7 +428,7 @@ docker run -d \
 > `--gpu-memory-utilization 0.60` reserves 9.6 GB for vLLM (model weights + KV cache),
 > leaving the remaining VRAM for TEI and system overhead.
 
-### Step 5 — Start the nginx proxy on port 12434
+### Step 5. Start the nginx proxy on port 12434
 
 ```bash
 docker run -d \
@@ -439,12 +439,12 @@ docker run -d \
   nginx:alpine
 ```
 
-### Step 6 — No .env.local change needed
+### Step 6. No .env.local change needed
 
 `MODEL_RUNNER_URL=http://host.docker.internal:12434` already targets the port the nginx proxy
 occupies. Leave it unchanged.
 
-### Step 7 — Restart the AI-facing services
+### Step 7. Restart the AI-facing services
 
 ```bash
 docker compose restart rag-service \
@@ -464,7 +464,7 @@ curl http://localhost:8000/health
 # TEI health
 curl http://localhost:8080/health
 
-# Proxy routes — should return the vLLM model list
+# Proxy routes should return the vLLM model list
 curl http://localhost:12434/v1/models
 
 # End-to-end embedding via proxy
