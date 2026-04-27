@@ -1,0 +1,92 @@
+# compose.ai.yaml — TEI + vLLM + AI proxy (g5.xlarge / NVIDIA A10G, 24 GB VRAM)
+#
+# Replaces Docker Model Runner with concurrent-batch inference:
+#   - TEI handles embeddings (mixedbread-ai/mxbai-embed-large-v1)
+#   - vLLM handles LLM chat completions (Qwen/Qwen2.5-14B-Instruct-AWQ — gpt-oss equivalent)
+#   - nginx ai-proxy listens on host port 12434, routing by path
+#
+# Start before the main stack:
+#   docker compose -f compose.ai.yaml up -d
+#
+# Stop:
+#   docker compose -f compose.ai.yaml down
+#
+# Prerequisites:
+#   - NVIDIA Container Toolkit configured (nvidia-ctk runtime configure --runtime=docker)
+#   - /opt/models directory exists (model weights cache, shared by both services)
+#
+# The main stack uses MODEL_RUNNER_URL=http://host.docker.internal:12434 — no change required.
+
+name: ai-inference
+
+networks:
+  ai:
+    driver: bridge
+
+services:
+
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:ampere-latest
+    command: --model-id mixedbread-ai/mxbai-embed-large-v1 --port 8080
+    volumes:
+      - /opt/models:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - ai
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    command: >
+      --model Qwen/Qwen2.5-14B-Instruct-AWQ
+      --quantization awq
+      --gpu-memory-utilization 0.75
+      --max-model-len 16384
+      --port 8000
+    # ipc: host is required by vLLM for shared memory between worker processes
+    ipc: host
+    volumes:
+      - /opt/models:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    restart: unless-stopped
+    networks:
+      - ai
+
+  ai-proxy:
+    image: nginx:alpine
+    ports:
+      - "12434:12434"
+    volumes:
+      - ./nginx/ai-proxy.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      tei:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ai
