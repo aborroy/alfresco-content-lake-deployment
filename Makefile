@@ -11,6 +11,11 @@
 #   make ps                 Show service status
 #   make config             Dry-run: render resolved compose configuration
 #   make clean              Stop + remove all volumes  [DESTRUCTIVE]
+#
+# AI inference backend (both serve on host port 12434 — run only one at a time):
+#   Dev  — enable Docker Model Runner in Docker Desktop (no extra make target needed)
+#   Prod — make start-ai   Start TEI + vLLM stack (requires NVIDIA GPU / compose.ai.yaml)
+#          make stop-ai    Stop the TEI + vLLM stack
 # =============================================================
 
 export DOCKER_BUILDKIT=1
@@ -26,7 +31,7 @@ endif
 
 DC := $(LOAD_ENV) docker compose $(ENV_ARGS)
 
-.PHONY: help up-alfresco up-nuxeo up-full up-demo down logs ps config clean
+.PHONY: help up-alfresco up-nuxeo up-full up-demo down logs ps config clean start-ai stop-ai
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | \
@@ -85,6 +90,12 @@ config: ## Dry-run: render the resolved compose configuration
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) config
+
+start-ai: ## Start TEI + vLLM inference stack (prod, requires NVIDIA GPU)
+	$(LOAD_ENV) docker compose -f compose.ai.yaml up -d
+
+stop-ai: ## Stop TEI + vLLM inference stack
+	$(LOAD_ENV) docker compose -f compose.ai.yaml down
 
 clean: ## Stop containers and remove ALL volumes [DESTRUCTIVE — wipes all data]
 	@echo "WARNING: This removes all persistent data (Alfresco, MongoDB, OpenSearch, etc.)"

@@ -1,15 +1,18 @@
 # compose.ai.yaml — TEI + vLLM + AI proxy (g5.xlarge / NVIDIA A10G, 24 GB VRAM)
 #
-# Replaces Docker Model Runner with concurrent-batch inference:
+# GPU inference alternative to Docker Model Runner for production (Linux/EC2):
 #   - TEI handles embeddings (mixedbread-ai/mxbai-embed-large-v1)
-#   - vLLM handles LLM chat completions (Qwen/Qwen2.5-14B-Instruct-AWQ — gpt-oss equivalent)
+#   - vLLM handles LLM chat completions (Qwen/Qwen2.5-14B-Instruct-AWQ)
+#   - vLLM is served as ai/qwen2.5 so it answers the same model name as Docker Model Runner
 #   - nginx ai-proxy listens on host port 12434, routing by path
 #
+# Both this stack and Docker Model Runner occupy host port 12434 — run only one at a time.
+#
 # Start before the main stack:
-#   docker compose -f compose.ai.yaml up -d
+#   docker compose -f compose.ai.yaml up -d   (or: make start-ai)
 #
 # Stop:
-#   docker compose -f compose.ai.yaml down
+#   docker compose -f compose.ai.yaml down    (or: make stop-ai)
 #
 # Prerequisites:
 #   - NVIDIA Container Toolkit configured (nvidia-ctk runtime configure --runtime=docker)
@@ -54,6 +57,7 @@ services:
       --quantization awq
       --gpu-memory-utilization 0.75
       --max-model-len 16384
+      --served-model-name ai/qwen2.5
       --port 8000
     # ipc: host is required by vLLM for shared memory between worker processes
     ipc: host
