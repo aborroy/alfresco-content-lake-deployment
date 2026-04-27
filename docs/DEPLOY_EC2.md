@@ -1,43 +1,146 @@
-# Deploying to AWS EC2
+# Deploying to AWS EC2 — g5.xlarge
 
-This guide covers deploying the full stack on a **g4dn.xlarge** (4 vCPU / 16 GB RAM / NVIDIA T4 GPU) running Ubuntu.
+This guide covers a fresh deployment of the full stack on a **g5.xlarge** (4 vCPU / 16 GB RAM /
+NVIDIA A10G GPU, 24 GB VRAM) running Ubuntu.
 
-The same Docker Model Runner used on Docker Desktop is also available on Linux via the `docker-model-plugin` package, keeping deployment assets and make commands identical across environments. On a GPU instance, Docker Model Runner automatically uses the T4 for inference, giving dramatically faster embedding and LLM response times compared to CPU-only instances. The only Linux-specific difference is setting `MODEL_RUNNER_URL` to `http://host.docker.internal:12434` in `.env.local`, the port Docker Model Runner binds to on Linux. The `host.docker.internal:host-gateway` mapping is already embedded in `compose.rag.yaml` so no extra compose file is needed.
+## Why vLLM + TEI instead of Docker Model Runner
+
+**Docker Model Runner** is the default AI backend and works well for local development on Docker
+Desktop (Mac and Windows). It is simple to set up and sufficient for single-user interactive use.
+
+For a shared EC2 deployment it has a critical limitation: inference requests are processed
+**serially**, one at a time. Under concurrent load -- multiple users querying simultaneously, or a
+quality-measurement run that ingests content while serving RAG queries -- requests pile up in a
+queue. The symptom is `docker-model-runner` CPU usage above 200% while GPU utilisation stays low:
+the GPU finishes each request quickly but the next one has not been dispatched yet.
+
+**vLLM** replaces the LLM backend with *continuous batching*: multiple in-flight requests are fused
+into a single GPU kernel dispatch, yielding 3--5x throughput at the same hardware cost.
+**HuggingFace TEI** does the same for embeddings, which matters because ingestion jobs and RAG
+queries both hit the embedding endpoint concurrently.
+
+The g5.xlarge's A10G (24 GB VRAM) keeps both models resident simultaneously with no eviction and
+no cold starts -- something the smaller T4 (16 GB) cannot do with a 14B-parameter LLM.
+
+A lightweight nginx proxy fronts TEI and vLLM on port **12434** -- the same port Docker Model
+Runner uses -- so `MODEL_RUNNER_URL` in `.env.local` does not change and no compose files need
+modification.
+
+```
+compose services --> MODEL_RUNNER_URL (http://host.docker.internal:12434)
+                          |
+                     nginx ai-proxy :12434
+                     +-- /v1/embeddings --> TEI   :8080  (mxbai-embed-large-v1)
+                     +-- /v1/*          --> vLLM  :8000  (Qwen2.5-14B-Instruct-AWQ)
+```
+
+**VRAM budget (A10G, 24 GB):**
+
+| Container | Model | Approx. VRAM |
+|---|---|---|
+| TEI | `mixedbread-ai/mxbai-embed-large-v1` | ~0.7 GB |
+| vLLM | `Qwen/Qwen2.5-14B-Instruct-AWQ` (at `--gpu-memory-utilization 0.75`) | ~18 GB |
+| **Total** | | **~18.7 GB**, ~5.3 GB headroom |
+
+> `Qwen2.5-14B-Instruct-AWQ` is the vLLM equivalent of Docker Model Runner's `ai/gpt-oss` --
+> same parameter class (~14B), 4-bit AWQ quantization, similar reasoning quality.
 
 ## 1. Launch the EC2 Instance
-
-In the AWS Console (or CLI), launch an instance with these settings:
 
 | Setting | Value |
 |---|---|
 | AMI | Ubuntu Server 24.04 LTS (HVM), 64-bit x86 |
-| Instance type | `g4dn.xlarge` |
+| Instance type | `g5.xlarge` |
 | Key pair | Create or select an existing key pair |
-| Storage | 150 GiB gp3 (delete on termination: your choice) |
+| Storage | 200 GiB gp3 (delete on termination: your choice) |
 
 **Security group inbound rules:**
 
 | Port | Protocol | Source | Purpose |
 |---|---|---|---|
 | 22 | TCP | Your IP | SSH |
-| 8080 | TCP | Your IP | Alfresco proxy |
+| 80 | TCP | Your IP | Alfresco proxy |
 
-> Restrict sources to your IP for a testing environment. Avoid `0.0.0.0/0` unless strictly necessary.
+> Restrict sources to your IP for a testing environment.
 
-## 2. Connect to the Instance
+## 2. Assign an Elastic IP
+
+A regular EC2 public IP changes every time the instance is stopped and started. Allocate an
+Elastic IP (static) and attach it so `SERVER_NAME` always resolves to the same address.
+
+```bash
+# Allocate a new Elastic IP in the VPC
+EIP_ALLOC=$(aws ec2 allocate-address \
+  --domain vpc \
+  --query 'AllocationId' \
+  --output text)
+echo "Allocation ID: $EIP_ALLOC"
+
+# Get your instance ID (substitute your instance name tag if you set one)
+INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=instance-state-name,Values=running" \
+             "Name=instance-type,Values=g5.xlarge" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text)
+echo "Instance ID: $INSTANCE_ID"
+
+# Associate the Elastic IP with the instance
+aws ec2 associate-address \
+  --instance-id $INSTANCE_ID \
+  --allocation-id $EIP_ALLOC
+
+# Show the assigned public IP
+aws ec2 describe-addresses \
+  --allocation-ids $EIP_ALLOC \
+  --query 'Addresses[0].PublicIp' \
+  --output text
+```
+
+> An Elastic IP attached to a running instance is **free**; charges apply only when it is allocated
+> but not associated with a running instance.
+
+## 3. Configure DNS
+
+Point your domain's A record to the Elastic IP from step 2. If the domain is hosted in Route 53:
+
+```bash
+ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+  --dns-name example.com. \
+  --query "HostedZones[0].Id" \
+  --output text | sed 's|/hostedzone/||')
+
+ELASTIC_IP=<ELASTIC_IP>   # replace with value from step 2
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id $ZONE_ID \
+  --change-batch "{
+    \"Changes\": [{
+      \"Action\": \"UPSERT\",
+      \"ResourceRecordSet\": {
+        \"Name\": \"content-lake.example.com\",
+        \"Type\": \"A\",
+        \"TTL\": 300,
+        \"ResourceRecords\": [{\"Value\": \"$ELASTIC_IP\"}]
+      }
+    }]
+  }"
+
+# Verify propagation (may take up to 60 s)
+dig +short content-lake.example.com
+```
+
+## 4. Connect to the Instance
 
 ```bash
 ssh -i /path/to/your-key.pem ubuntu@<EC2_PUBLIC_IP>
 ```
 
-## 3. Prepare the OS
-
-Update packages and add swap space. The stack is RAM-intensive during startup; 8 GB of swap prevents OOM kills while services are initialising.
+## 5. Prepare the OS
 
 ```bash
 sudo apt-get update && sudo apt-get upgrade -y
 
-# 8 GB swap file
+# 8 GB swap -- the stack is RAM-intensive during startup
 sudo fallocate -l 8G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
@@ -45,16 +148,13 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-## 4. Install NVIDIA Drivers and Container Toolkit
-
-Docker Model Runner requires the NVIDIA kernel driver and the NVIDIA Container Toolkit to pass the GPU through to containers.
+## 6. Install NVIDIA Drivers and Container Toolkit
 
 ```bash
-# Install the NVIDIA kernel driver
 sudo apt-get install -y nvidia-driver-535
 ```
 
-> A reboot is required after driver installation before the GPU is usable.
+> A reboot is required after driver installation.
 
 ```bash
 sudo reboot
@@ -72,9 +172,9 @@ Verify the driver is loaded:
 nvidia-smi
 ```
 
-You should see the T4 listed with driver version and CUDA version.
+You should see the A10G listed with driver version and CUDA version.
 
-Now install the NVIDIA Container Toolkit so Docker can access the GPU:
+Install the NVIDIA Container Toolkit:
 
 ```bash
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
@@ -88,10 +188,9 @@ sudo apt-get update
 sudo apt-get install -y nvidia-container-toolkit
 ```
 
-## 5. Install Docker Engine
+## 7. Install Docker Engine
 
 ```bash
-# Add Docker's GPG key and repository
 sudo apt-get install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -104,12 +203,10 @@ echo \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Install Docker Engine, Compose plugin, and Model Runner plugin
 sudo apt-get update
 sudo apt-get install -y \
   docker-ce docker-ce-cli containerd.io \
-  docker-buildx-plugin docker-compose-plugin \
-  docker-model-plugin
+  docker-buildx-plugin docker-compose-plugin
 
 # Register the NVIDIA runtime with Docker
 sudo nvidia-ctk runtime configure --runtime=docker
@@ -122,72 +219,50 @@ newgrp docker
 # Verify
 docker version
 docker compose version
-docker model version
 ```
 
-## 6. Pull the AI Models
+## 8. Create the Model Cache Directory
 
-Pull the models before starting the full stack so the AI services find them ready on first startup. Docker Model Runner will use the T4 GPU automatically.
+TEI and vLLM share a single directory on the host for downloaded model weights.
+Both services bind-mount it, so the ~5 GB of weights are downloaded once and reused
+across restarts and upgrades.
 
 ```bash
-docker model pull ai/mxbai-embed-large
-docker model pull ai/qwen2.5
+sudo mkdir -p /opt/models
+sudo chown $USER:$USER /opt/models
 ```
 
-> **Model choice on g4dn.xlarge (T4, 15 GB VRAM):** `ai/gpt-oss` is a ~13 GB reasoning model that leaves almost no headroom alongside the embedding model (~0.7 GB). On a T4 this causes the model runner to evict one model when the other is needed, adding a **3–5 minute cold-start penalty** to every RAG query. `ai/qwen2.5` is the recommended default, see benchmarks below.
->
-> **Benchmarks on g4dn.xlarge (T4, warm model):**
->
-> | Model | Size | tok/s (warm) | Total response (warm) | Cold start |
-> |---|---|---|---|---|
-> | `ai/mistral` (7B Q4) | ~4 GB | ~41 | ~1.3 s | ~50 s |
-> | `ai/qwen2.5` (4B) | ~3 GB | ~41 | **~4 s** | **<5 s** |
-> | `ai/gemma3` (4B) | ~3.5 GB | ~61 | ~3 s | ~50 s |
-> | `ai/gpt-oss` (~13B) | ~13 GB | ~15 | 3–5 min | 3–5 min |
->
-> `ai/qwen2.5` wins for RAG: comparable throughput to mistral with a near-zero cold start, meaning the model runner does not stall when switching between the embedding model and the LLM within a single query. `ai/gemma3` is faster at inference but its ~50 s cold start negates that advantage in practice.
->
-> To use `ai/gpt-oss` without cold-start eviction you need at least a **g5.xlarge** (NVIDIA A10G, 24 GB VRAM), which gives both models room to stay resident simultaneously:
-> ```bash
-> docker model pull ai/gpt-oss
-> # In .env.local:
-> LLM_MODEL=ai/gpt-oss
-> ```
-
-## 7. Clone the Repository
+## 9. Clone the Repository
 
 ```bash
 git clone https://github.com/aborroy/content-lake-app-deployment.git
 cd content-lake-app-deployment
 ```
 
-## 8. Authenticate to Container Registries
-
-The HXPR images are hosted on `ghcr.io`.
+## 10. Authenticate to Container Registries
 
 ```bash
 docker login ghcr.io
 ```
 
-## 9. Create `.env.local`
+## 11. Create `.env.local`
 
-Create `.env.local` to override the defaults for this EC2 deployment. Replace `<EC2_PUBLIC_IP>` with the actual public IP (or DNS name) of your instance.
+Replace `<EC2_PUBLIC_IP_OR_DOMAIN>` with your instance's IP or domain name.
 
 ```bash
 cat > .env.local << 'EOF'
-SERVER_NAME=<EC2_PUBLIC_IP>
+SERVER_NAME=<EC2_PUBLIC_IP_OR_DOMAIN>
 
-# Docker Model Runner on Linux binds to port 12434 on the host.
-# Containers reach it via host.docker.internal (mapped by compose.rag.yaml).
+# TEI + vLLM proxy listens on port 12434 (same port as Docker Model Runner)
 MODEL_RUNNER_URL=http://host.docker.internal:12434
+
+# Model names must match HuggingFace repo IDs (not Docker Model Runner aliases)
+EMBEDDING_MODEL=mixedbread-ai/mxbai-embed-large-v1
+LLM_MODEL=Qwen/Qwen2.5-14B-Instruct-AWQ
 EOF
 ```
 
-> `EMBEDDING_MODEL` is unchanged. `LLM_MODEL` defaults to `ai/qwen2.5`, see the benchmarks in step 6 for model choice guidance.
-
-## 10. Export Build Credentials
-
-These are required to build the HXPR image. Export them in your shell before starting the stack.
+## 12. Export Build Credentials
 
 ```bash
 export MAVEN_USERNAME=<github-username>
@@ -199,273 +274,40 @@ export NEXUS_PASSWORD=<hyland-nexus-password>
 export HXPR_GIT_AUTH_TOKEN=<github-pat-with-repo-read>
 ```
 
-See the [Getting Credentials](README.md#getting-credentials) section in the main README for details on obtaining each credential.
+See the [Getting Credentials](../README.md#getting-credentials) section in the main README for
+details on obtaining each credential.
 
-## 11. Build and Start the Stack
+## 13. Start the AI Inference Stack
 
-The initial build compiles several Java projects from source; it will take several minutes.
-
-```bash
-make up
-```
-
-## 12. Monitor Startup
+The AI inference stack (`compose.ai.yaml`) must be started first. On first start, TEI and vLLM
+each download their model weights (~5 GB total) from HuggingFace and cache them in `/opt/models`.
+Subsequent starts skip the download.
 
 ```bash
-make ps
+docker compose -f compose.ai.yaml up -d
 ```
 
-Follow logs for all services:
+Monitor startup -- TEI is typically ready within 2 minutes; vLLM can take up to 5 minutes on first
+start while it compiles CUDA kernels:
 
 ```bash
-make logs
+docker compose -f compose.ai.yaml logs -f
 ```
 
-`hxpr-app` has a 120-second start period; expect the stack to take 3–5 minutes to fully stabilise.
+Wait until vLLM logs `Application startup complete` before proceeding.
 
-## 13. Public Endpoints
-
-Replace `<EC2_PUBLIC_IP>` with your instance's IP or DNS name.
-
-| URL | Description |
-|---|---|
-| `http://<EC2_PUBLIC_IP>:8080/` | Content Lake UI |
-| `http://<EC2_PUBLIC_IP>:8080/alfresco/` | Alfresco Repository |
-| `http://<EC2_PUBLIC_IP>:8080/share/` | Alfresco Share |
-| `http://<EC2_PUBLIC_IP>:8080/admin/` | Alfresco Control Center |
-| `http://<EC2_PUBLIC_IP>:8080/api/rag/` | RAG Service |
-
-## 14. Day-to-Day Commands
+## 14. Verify the AI Inference Stack
 
 ```bash
-make down     # stop and remove containers (preserves volumes)
-make up       # start again (images already built, skips rebuild)
-make logs     # tail all logs
-make ps       # show service status
-make clean    # remove containers AND all volumes (destructive)
-```
-
-## 15. Saving Costs
-
-- Stop the EC2 instance when not in use, you are only charged for storage while stopped (~$0.10/GB/month for gp3).
-- EBS volumes persist across instance stops, so Alfresco data, Solr index, MongoDB, and pulled model weights are all retained.
-
-## 16. Upgrading to g5.xlarge (NVIDIA A10G, 24 GB VRAM)
-
-The **g5.xlarge** provides an NVIDIA A10G GPU with 24 GB VRAM, which allows `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) to reside in VRAM simultaneously, eliminating the 3–5 minute cold-start eviction penalty present on the T4.
-
-**Cost difference (us-east-1, on-demand):** ~$0.48/hr more than g4dn.xlarge ($1.006 vs $0.526).
-
-### Option A. Stop and resize an existing instance (recommended)
-
-This preserves all EBS data (Alfresco content, Solr index, MongoDB, pulled model weights).
-
-```bash
-# 1. Retrieve your instance ID
-INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=<your-instance-name>" \
-  --query "Reservations[0].Instances[0].InstanceId" \
-  --output text)
-
-# 2. Stop the instance
-aws ec2 stop-instances --instance-ids $INSTANCE_ID
-aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID
-
-# 3. Change the instance type
-aws ec2 modify-instance-attribute \
-  --instance-id $INSTANCE_ID \
-  --instance-type '{"Value": "g5.xlarge"}'
-
-# 4. Start the instance
-aws ec2 start-instances --instance-ids $INSTANCE_ID
-aws ec2 wait instance-running --instance-ids $INSTANCE_ID
-
-# 5. Get the new public IP (it changes on restart unless you use an Elastic IP)
-aws ec2 describe-instances \
-  --instance-ids $INSTANCE_ID \
-  --query "Reservations[0].Instances[0].PublicIpAddress" \
-  --output text
-```
-
-> If you have an Elastic IP attached to the instance, the address is preserved across the stop/start.
-
-### Option B. Launch a fresh g5.xlarge instance
-
-Follow the full deployment guide from step 1, selecting `g5.xlarge` as the instance type. The NVIDIA driver version (`nvidia-driver-535`) and all other steps are identical.  the A10G is supported by the same driver series.
-
-### After the resize, enable gpt-oss
-
-Once the instance is running on g5.xlarge, pull the model and update your `.env.local`:
-
-```bash
-# Pull gpt-oss (this will take a few minutes; the model is ~13 GB)
-docker model pull ai/gpt-oss
-
-# Update .env.local to use gpt-oss
-cat >> .env.local << 'EOF'
-LLM_MODEL=ai/gpt-oss
-EOF
-
-# Restart the RAG service to pick up the new model
-docker compose restart rag-service
-```
-
-Verify the model is resident in VRAM (both models should show simultaneously):
-
-```bash
-nvidia-smi
-docker model ls
-```
-
-With 24 GB VRAM, `ai/gpt-oss` (~13 GB) and `ai/mxbai-embed-large` (~0.7 GB) leave ~10 GB headroom, no evictions, no cold starts.
-
-## 17. High-Concurrency Mode: vLLM + TEI
-
-### When to use this
-
-Docker Model Runner (the default) processes inference requests **serially** one at a time. Under concurrent load (multiple users querying simultaneously, or a quality-measurement program that also ingests content), requests pile up in a queue. The symptom is `docker-model-runner` CPU spiking above 200% while GPU utilisation stays low: the GPU finishes a request quickly but the next one has not been dispatched yet.
-
-**vLLM** replaces the LLM backend with *continuous batching*: multiple in-flight requests are fused into a single GPU kernel dispatch, giving 3–5× throughput improvement at the same hardware cost. **HuggingFace TEI** does the same for embeddings, relevant here because ingestion jobs (batch and live ingesters) and RAG queries both hit the embedding endpoint concurrently.
-
-### How it works (no stack changes required)
-
-A lightweight nginx proxy listens on port **12434**, the same port Docker Model Runner occupies on Linux. It routes by path:
-
-```
-compose services → http://host.docker.internal:12434  (nginx proxy)
-                         ├── /v1/embeddings  → TEI   :8080
-                         └── /v1/*           → vLLM  :8000
-```
-
-Because the proxy mirrors the existing port, `MODEL_RUNNER_URL=http://host.docker.internal:12434` in `.env.local` does **not** change. No compose files, no Java code, and no `.env` defaults are modified.
-
-All three containers (`tei`, `vllm`, `ai-proxy`) run with `--network host` so they reach each other via `127.0.0.1` and are reachable from inside the compose network via `host.docker.internal`.
-
-### VRAM budget (T4, 16 GB)
-
-| Container | Model | Approx. VRAM |
-|-----------|-------|--------------|
-| vLLM | `Qwen/Qwen2.5-3B-Instruct-AWQ` (4-bit AWQ, same family as `ai/qwen2.5`) | ~9.6 GB at `--gpu-memory-utilization 0.60` (model + KV cache) |
-| TEI | `mixedbread-ai/mxbai-embed-large-v1` (same weights as `ai/mxbai-embed-large`) | ~0.7 GB |
-| **Total** | | **~10.3 GB**, ~5.7 GB headroom |
-
-### Step 1. Stop Docker Model Runner
-
-```bash
-sudo systemctl stop docker-model-runner
-# Or, if the systemd unit is not present:
-docker model stop --all 2>/dev/null || true
-```
-
-> Docker Model Runner is no longer needed once the proxy is running. Stopping it frees the CPU
-> overhead it consumes even when idle and ensures nothing else claims port 12434.
-
-### Step 2. Create the nginx routing config
-
-```bash
-sudo mkdir -p /opt/ai-proxy
-sudo tee /opt/ai-proxy/nginx.conf > /dev/null << 'EOF'
-events {}
-http {
-  server {
-    listen 12434;
-
-    # Embedding requests → TEI
-    location /v1/embeddings {
-      proxy_pass         http://127.0.0.1:8080;
-      proxy_read_timeout 120s;
-      proxy_send_timeout 120s;
-    }
-
-    # Everything else (chat, models list, …) → vLLM
-    location / {
-      proxy_pass         http://127.0.0.1:8000;
-      proxy_read_timeout 300s;
-      proxy_send_timeout 300s;
-    }
-  }
-}
-EOF
-```
-
-### Step 3. Start TEI (embeddings)
-
-The T4 uses NVIDIA Turing architecture (SM75); the `turing-latest` TEI image is required.
-
-```bash
-docker run -d \
-  --name tei \
-  --gpus device=0 \
-  --network host \
-  --restart unless-stopped \
-  -v /opt/models:/data \
-  ghcr.io/huggingface/text-embeddings-inference:turing-latest \
-  --model-id mixedbread-ai/mxbai-embed-large-v1 \
-  --port 8080
-```
-
-> The model (~0.6 GB) is downloaded from HuggingFace on first start and cached in `/opt/models`.
-> No HuggingFace token is required, the model is public.
-
-### Step 4. Start vLLM (LLM inference)
-
-```bash
-docker run -d \
-  --name vllm \
-  --gpus device=0 \
-  --network host \
-  --restart unless-stopped \
-  -v /opt/models:/root/.cache/huggingface \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-3B-Instruct-AWQ \
-  --quantization awq \
-  --gpu-memory-utilization 0.60 \
-  --max-model-len 8192 \
-  --port 8000
-```
-
-> The model (~2 GB AWQ) is downloaded on first start and cached in `/opt/models`.
-> `--gpu-memory-utilization 0.60` reserves 9.6 GB for vLLM (model weights + KV cache),
-> leaving the remaining VRAM for TEI and system overhead.
-
-### Step 5. Start the nginx proxy on port 12434
-
-```bash
-docker run -d \
-  --name ai-proxy \
-  --network host \
-  --restart unless-stopped \
-  -v /opt/ai-proxy/nginx.conf:/etc/nginx/nginx.conf:ro \
-  nginx:alpine
-```
-
-### Step 6. No .env.local change needed
-
-`MODEL_RUNNER_URL=http://host.docker.internal:12434` already targets the port the nginx proxy
-occupies. Leave it unchanged.
-
-### Step 7. Restart the AI-facing services
-
-```bash
-docker compose restart rag-service \
-  batch-ingester live-ingester \
-  nuxeo-batch-ingester nuxeo-live-ingester
-```
-
-### Verify the setup
-
-```bash
-# Both containers should show VRAM allocations that sum to ≤ 16 GB
+# VRAM allocations (TEI + vLLM should together use ~18.7 GB of the 24 GB A10G)
 nvidia-smi
 
-# vLLM health
-curl http://localhost:8000/health
+# Service health
+curl http://localhost:8080/health   # TEI
+curl http://localhost:8000/health   # vLLM
 
-# TEI health
-curl http://localhost:8080/health
-
-# Proxy routes should return the vLLM model list
-curl http://localhost:12434/v1/models
+# Proxy routes (nginx ai-proxy on port 12434)
+curl http://localhost:12434/v1/models   # should return vLLM model list
 
 # End-to-end embedding via proxy
 curl -s -X POST http://localhost:12434/v1/embeddings \
@@ -476,15 +318,89 @@ curl -s -X POST http://localhost:12434/v1/embeddings \
 # End-to-end chat via proxy
 curl -s -X POST http://localhost:12434/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"Qwen/Qwen2.5-3B-Instruct-AWQ","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+  -d '{"model":"Qwen/Qwen2.5-14B-Instruct-AWQ","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
   | grep -o '"object":"chat.completion"'
 ```
 
-### Reverting to Docker Model Runner
+Both `grep` commands should print a match if the proxy is routing correctly.
+
+## 15. Build and Start the Main Stack
+
+The initial build compiles several Java projects from source; it will take several minutes.
 
 ```bash
-docker stop ai-proxy tei vllm
-docker rm   ai-proxy tei vllm
-sudo systemctl start docker-model-runner
-# Or: docker model serve  (if using the CLI-managed daemon)
+make up
+```
+
+## 16. Monitor Startup
+
+```bash
+make ps
+make logs
+```
+
+`hxpr-app` has a 120-second start period; expect the stack to take 3--5 minutes to stabilise.
+
+## 17. Public Endpoints
+
+Replace `<EC2_PUBLIC_IP_OR_DOMAIN>` with your instance's IP or domain name.
+
+| URL | Description |
+|---|---|
+| `http://<EC2_PUBLIC_IP_OR_DOMAIN>/` | Content Lake UI |
+| `http://<EC2_PUBLIC_IP_OR_DOMAIN>/alfresco/` | Alfresco Repository |
+| `http://<EC2_PUBLIC_IP_OR_DOMAIN>/share/` | Alfresco Share |
+| `http://<EC2_PUBLIC_IP_OR_DOMAIN>/admin/` | Alfresco Control Center |
+| `http://<EC2_PUBLIC_IP_OR_DOMAIN>/api/rag/` | RAG Service |
+
+## 18. Day-to-Day Commands
+
+```bash
+# Main stack
+make up       # start (skips rebuild after first run)
+make down     # stop and remove containers (preserves volumes)
+make logs     # tail all logs
+make ps       # show service status
+make clean    # remove containers AND volumes (destructive)
+
+# AI inference stack
+docker compose -f compose.ai.yaml up -d    # start TEI + vLLM + proxy
+docker compose -f compose.ai.yaml down     # stop
+docker compose -f compose.ai.yaml logs -f  # tail AI inference logs
+docker compose -f compose.ai.yaml ps       # status
+```
+
+## 19. Saving Costs
+
+- Stop the EC2 instance when not in use; you are only charged for storage while stopped (~$0.10/GB/month for gp3).
+- EBS volumes persist across stops, so Alfresco data, Solr index, MongoDB, and cached model weights in `/opt/models` are all retained.
+
+## 20. Downgrading to a Smaller LLM
+
+If you need to free VRAM (e.g. for additional workloads) you can switch to the 7B model, which
+uses ~13 GB at `--gpu-memory-utilization 0.55` and leaves ~10 GB headroom.
+
+Edit `compose.ai.yaml`, update the vLLM service command:
+
+```yaml
+    command: >
+      --model Qwen/Qwen2.5-7B-Instruct-AWQ
+      --quantization awq
+      --gpu-memory-utilization 0.55
+      --max-model-len 16384
+      --port 8000
+```
+
+Update `.env.local`:
+
+```bash
+sed -i 's|LLM_MODEL=.*|LLM_MODEL=Qwen/Qwen2.5-7B-Instruct-AWQ|' .env.local
+```
+
+Restart the affected services:
+
+```bash
+docker compose -f compose.ai.yaml up -d --force-recreate vllm
+docker compose restart rag-service batch-ingester live-ingester \
+  nuxeo-batch-ingester nuxeo-live-ingester
 ```
