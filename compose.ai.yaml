@@ -26,7 +26,7 @@ networks:
 services:
 
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:ampere-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:86-latest
     command: --model-id mixedbread-ai/mxbai-embed-large-v1 --port 8080
     volumes:
       - /opt/models:/data
