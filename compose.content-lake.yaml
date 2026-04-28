@@ -225,7 +225,7 @@ services:
       HXPR_IDP_PASSWORD: ${HXPR_IDP_PASSWORD}
       MODEL_RUNNER_URL: ${MODEL_RUNNER_URL:-http://host.docker.internal:12434}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ai/mxbai-embed-large}
-      LLM_MODEL: ${LLM_MODEL:-ai/gpt-oss}
+      LLM_MODEL: ${LLM_MODEL:-ai/qwen2.5}
       LLM_TEMPERATURE: "0.3"
       LLM_MAX_TOKENS: "1024"
       RAG_DEFAULT_TOP_K: ${RAG_DEFAULT_TOP_K:-15}
