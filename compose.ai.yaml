@@ -1,10 +1,20 @@
 # compose.ai.yaml — TEI + vLLM + AI proxy (g5.xlarge / NVIDIA A10G, 24 GB VRAM)
 #
 # GPU inference alternative to Docker Model Runner for production (Linux/EC2):
-#   - TEI handles embeddings (mixedbread-ai/mxbai-embed-large-v1)
-#   - vLLM handles LLM chat completions (Qwen/Qwen2.5-14B-Instruct-AWQ)
-#   - vLLM is served as ai/qwen2.5 so it answers the same model name as Docker Model Runner
-#   - nginx ai-proxy listens on host port 12434, routing by path
+#   - TEI (tei)          embeddings   — mixedbread-ai/mxbai-embed-large-v1  (port 12434 via proxy)
+#   - TEI (tei-reranker) reranking    — BAAI/bge-reranker-v2-m3              (port 12435 direct)
+#   - vLLM               LLM chat     — Qwen/Qwen2.5-14B-Instruct-AWQ       (port 12434 via proxy)
+#
+# The reranker is multilingual (EN/FR/ZH/PL) and adds a second-stage cross-encoder filter
+# that rescues relevant chunks that scored just below the initial vector similarity threshold.
+# The rag-service targets it via RAG_RERANKER_URL=http://host.docker.internal:12435 and
+# falls back gracefully to original ranking if the reranker is unavailable.
+#
+# VRAM budget on A10G (24 GB):
+#   vLLM (Qwen 14B AWQ, 0.75 util)  ≈ 18 GB
+#   TEI embedding (mxbai-large)      ≈  0.3 GB
+#   TEI reranker  (bge-reranker-v2)  ≈  0.6 GB
+#   Total                            ≈ 18.9 GB  (headroom ≈ 5 GB)
 #
 # Both this stack and Docker Model Runner occupy host port 12434 — run only one at a time.
 #
@@ -31,6 +41,32 @@ services:
   tei:
     image: ghcr.io/huggingface/text-embeddings-inference:86-latest
     command: --model-id mixedbread-ai/mxbai-embed-large-v1 --port 8080
+    volumes:
+      - /opt/models:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - ai
+
+  tei-reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:86-latest
+    # BAAI/bge-reranker-v2-m3: multilingual cross-encoder (EN/FR/ZH/PL)
+    # TEI auto-detects the model type and serves the /rerank endpoint.
+    command: --model-id BAAI/bge-reranker-v2-m3 --port 8080
+    ports:
+      - "12435:8080"
     volumes:
       - /opt/models:/data
     deploy:

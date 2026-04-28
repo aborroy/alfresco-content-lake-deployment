@@ -228,9 +228,13 @@ services:
       LLM_MODEL: ${LLM_MODEL:-ai/gpt-oss}
       LLM_TEMPERATURE: "0.3"
       LLM_MAX_TOKENS: "1024"
-      RAG_DEFAULT_TOP_K: ${RAG_DEFAULT_TOP_K:-5}
+      RAG_DEFAULT_TOP_K: ${RAG_DEFAULT_TOP_K:-15}
       RAG_DEFAULT_MIN_SCORE: ${RAG_DEFAULT_MIN_SCORE:-0.0}
       RAG_MAX_CONTEXT_LENGTH: ${RAG_MAX_CONTEXT_LENGTH:-12000}
+      RAG_USE_HYBRID_SEARCH: ${RAG_USE_HYBRID_SEARCH:-true}
+      SEMANTIC_SEARCH_MIN_SCORE: ${SEMANTIC_SEARCH_MIN_SCORE:-0.2}
+      # Reranker: disabled by default (local/Docker Model Runner). To enable with compose.ai.yaml,
+      # set RAG_RERANKER_URL=http://host.docker.internal:12435 in the environment or .env file.
       RAG_RERANKER_URL: ${RAG_RERANKER_URL:-}
       RAG_SOURCE_LINKS_ALFRESCO_TEMPLATE: "/aca/#/search/(viewer:view/{nodeId})?location=%2Frag"
       RAG_SOURCE_LINKS_NUXEO_TEMPLATE: "/nuxeo/ui/#!/browse{nuxeoPath}"
