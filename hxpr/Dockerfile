@@ -1,7 +1,7 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 
 ARG HXPR_GIT_URL=https://github.com/HylandSoftware/hxpr.git
-ARG HXPR_GIT_REF=feature/CIN-1509-CreateEmbeddingAPI
+ARG HXPR_GIT_REF=master
 # Optional: pin to a specific commit SHA for reproducible builds.
 # When set, the clone is done without --depth 1 so the SHA can be checked out.
 ARG HXPR_GIT_SHA=
