@@ -70,7 +70,7 @@ COPY --from=build /workspace/hxpr/server/hxpr-app/target/hxpr-app-*.jar /deploym
 
 RUN addgroup -g ${GROUP_ID} ${GROUP_NAME} && \
     adduser -D -u ${USER_ID} -G ${GROUP_NAME} ${USER_NAME} && \
-    chgrp -R ${GROUP_NAME} /deployments && \
+    chown -R ${USER_NAME}:${GROUP_NAME} /deployments && \
     chmod +x /deployments/run-java.sh
 
 RUN sed -i 's/#networkaddress.cache.ttl=-1/networkaddress.cache.ttl=0/' $JAVA_HOME/conf/security/java.security
