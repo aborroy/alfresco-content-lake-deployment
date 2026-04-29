@@ -41,6 +41,7 @@ services:
          && JAR="$$(ls -1 alfresco/alfresco-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
+        RUN apk add --no-cache gcompat
         RUN addgroup -S app && adduser -S -G app app
         RUN mkdir -p /data && chown app:app /data
         WORKDIR /app
@@ -119,6 +120,7 @@ services:
          && JAR="$$(ls -1 alfresco/alfresco-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
+        RUN apk add --no-cache gcompat
         RUN addgroup -S app && adduser -S -G app app
         WORKDIR /app
         COPY --from=build /layers/dependencies/ ./
@@ -195,6 +197,7 @@ services:
          && JAR="$$(ls -1 common/rag-service/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
+        RUN apk add --no-cache gcompat
         RUN addgroup -S app && adduser -S -G app app
         WORKDIR /app
         COPY --from=build /layers/dependencies/ ./
@@ -284,6 +287,7 @@ services:
          && JAR="$$(ls -1 nuxeo/nuxeo-batch-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
+        RUN apk add --no-cache gcompat
         RUN addgroup -S app && adduser -S -G app app
         WORKDIR /app
         COPY --from=build /layers/dependencies/ ./
@@ -355,6 +359,7 @@ services:
          && JAR="$$(ls -1 nuxeo/nuxeo-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
         FROM eclipse-temurin:21-jre-alpine
+        RUN apk add --no-cache gcompat
         RUN addgroup -S app && adduser -S -G app app
         RUN mkdir -p /data && chown app:app /data
         WORKDIR /app
