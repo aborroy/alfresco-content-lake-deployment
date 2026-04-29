@@ -114,8 +114,7 @@ services:
         COPY common/content-lake-core/src common/content-lake-core/src
         COPY alfresco/content-lake-source-alfresco/src alfresco/content-lake-source-alfresco/src
         COPY alfresco/alfresco-live-ingester/src alfresco/alfresco-live-ingester/src
-        RUN --mount=type=cache,target=/root/.m2 \
-            mvn -q -DskipTests -pl alfresco/alfresco-live-ingester -am package
+        RUN mvn -q -DskipTests -pl alfresco/alfresco-live-ingester -am package
         RUN mkdir -p /layers \
          && JAR="$$(ls -1 alfresco/alfresco-live-ingester/target/*.jar | grep -v 'original' | head -n 1)" \
          && java -Djarmode=layertools -jar "$${JAR}" extract --destination /layers
