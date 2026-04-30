@@ -8,6 +8,11 @@ services:
     profiles: [alfresco, nuxeo, full, demo]
     image: ghcr.io/hylandexperience/hxp/iam/api.mock:${IDP_TAG:-26.35.14}
     hostname: idp
+    environment:
+      - IdpConfiguration__Host__IssuerUri=http://idp:8080/idp
+      - IdpConfiguration__Host__ValidIssuers__0=http://idp:8080/idp
+      - IdpConfiguration__Host__PublicOrigin=http://idp:8080
+      - IdpConfiguration__Host__RequireHttps=false
     volumes:
       - ./hxpr/idp/identity-resources.json:/app/seeddata/local/web.seeddata.json:ro
     networks:

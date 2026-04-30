@@ -1,4 +1,4 @@
-FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
+FROM maven:3-eclipse-temurin-25-alpine AS build
 
 ARG HXPR_GIT_URL=https://github.com/HylandSoftware/hxpr.git
 ARG HXPR_GIT_REF=master
@@ -52,7 +52,7 @@ export NEXUS_PASSWORD="$(cat /run/secrets/nexus_password)"
 mvn --no-transfer-progress -nsu -pl server/hxpr-app -am package -DskipTests
 SCRIPT
 
-FROM ghcr.io/hylandsoftware/corretto-sambuca:20260212@sha256:235a2597af2937e430895e32dfdd0785e8988f995b79c0e55187c5b013acaf12
+FROM ghcr.io/hylandsoftware/corretto-sambuca-25:20260306@sha256:34fc8ddd10d51da8b38192e405c1c570e2d7130f98e134c368a6553a7759fbed
 
 ARG RUN_JAVA_VERSION=1.3.8
 ARG GROUP_NAME=Hyland
