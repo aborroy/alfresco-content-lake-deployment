@@ -39,7 +39,6 @@ help: ## Show this help
 
 up-alfresco: ## Alfresco source — core services (~17)
 	$(LOAD_ENV) \
-	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) --profile alfresco up --build -d
@@ -49,7 +48,6 @@ up-nuxeo: ## Nuxeo source — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
-	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=nuxeo-batch-ingester:9093 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /nuxeo/;" \
 	  docker compose $(ENV_ARGS) --profile nuxeo up --build -d
@@ -59,7 +57,6 @@ up-full: ## Alfresco + Nuxeo — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
-	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) --profile full up --build -d
@@ -69,7 +66,6 @@ up-demo: ## Full stack + demo UI at / — start ../nuxeo-deployment first, then 
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
 	$(LOAD_ENV) \
-	  CONTENT_LAKE_GIT_CONTEXT="$${CONTENT_LAKE_GIT_CONTEXT:-../content-lake-app}" \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="proxy_pass http://content-lake-app-ui:80;" \
 	  docker compose $(ENV_ARGS) --profile demo up --build -d
