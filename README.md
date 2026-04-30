@@ -402,7 +402,7 @@ You can also call `docker compose` directly; remember to add `--env-file .env.lo
 
 ## Deploying to AWS EC2
 
-See [docs/DEPLOY_EC2.md](docs/DEPLOY_EC2.md) for a step-by-step guide to running the full stack on an `r6i.xlarge` (4 vCPU / 32 GB RAM) Ubuntu instance, including Docker Engine and Docker Model Runner installation, and cost-saving tips.
+See [docs/DEPLOY_EC2.md](docs/DEPLOY_EC2.md) for a step-by-step guide to running the full stack on a `g5.2xlarge` (8 vCPU / 32 GB RAM / NVIDIA A10G GPU, 24 GB VRAM) Ubuntu instance, including vLLM, TEI, and nginx proxy installation for GPU-accelerated inference.
 
 ## Notes
 

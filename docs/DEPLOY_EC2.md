@@ -1,6 +1,6 @@
-# Deploying to AWS EC2 — g5.xlarge
+# Deploying to AWS EC2 — g5.2xlarge
 
-This guide covers a fresh deployment of the full stack on a **g5.xlarge** (4 vCPU / 16 GB RAM /
+This guide covers a fresh deployment of the full stack on a **g5.2xlarge** (8 vCPU / 32 GB RAM /
 NVIDIA A10G GPU, 24 GB VRAM) running Ubuntu.
 
 ## Why vLLM + TEI instead of Docker Model Runner
@@ -19,7 +19,7 @@ into a single GPU kernel dispatch, yielding 3--5x throughput at the same hardwar
 **HuggingFace TEI** does the same for embeddings, which matters because ingestion jobs and RAG
 queries both hit the embedding endpoint concurrently.
 
-The g5.xlarge's A10G (24 GB VRAM) keeps both models resident simultaneously with no eviction and
+The g5.2xlarge's A10G (24 GB VRAM) keeps both models resident simultaneously with no eviction and
 no cold starts -- something the smaller T4 (16 GB) cannot do with a 14B-parameter LLM.
 
 A lightweight nginx proxy fronts TEI and vLLM on port **12434** -- the same port Docker Model
@@ -50,7 +50,7 @@ compose services --> MODEL_RUNNER_URL (http://host.docker.internal:12434)
 | Setting | Value |
 |---|---|
 | AMI | Ubuntu Server 24.04 LTS (HVM), 64-bit x86 |
-| Instance type | `g5.xlarge` |
+| Instance type | `g5.2xlarge` |
 | Key pair | Create or select an existing key pair |
 | Storage | 200 GiB gp3 (delete on termination: your choice) |
 
@@ -79,7 +79,7 @@ echo "Allocation ID: $EIP_ALLOC"
 # Get your instance ID (substitute your instance name tag if you set one)
 INSTANCE_ID=$(aws ec2 describe-instances \
   --filters "Name=instance-state-name,Values=running" \
-             "Name=instance-type,Values=g5.xlarge" \
+             "Name=instance-type,Values=g5.2xlarge" \
   --query "Reservations[0].Instances[0].InstanceId" \
   --output text)
 echo "Instance ID: $INSTANCE_ID"
