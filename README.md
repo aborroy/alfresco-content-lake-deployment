@@ -462,7 +462,7 @@ HOST=axovia.alfdemo.com \
 | `NUXEO_AUTH` | yes | -- | Nuxeo admin credentials (`user:password`) |
 | `HOST` | no | `localhost` | Target hostname or IP |
 | `NUXEO_PORT` | no | `80` | Nuxeo port (80 = through nginx proxy; 8081 = direct, local only) |
-| `NUXEO_WORKSPACE` | no | `Policies` | Nuxeo workspace used for test documents -- created automatically if absent |
+| `NUXEO_WORKSPACE` | no | `content-lake-smoke` | Nuxeo workspace used for test documents -- created automatically if absent. `content-lake-smoke` is treated as a disposable smoke workspace and deleted during cleanup even if it existed before the run. |
 | `WAIT_LIVE_S` | no | `60` | Seconds to wait for the Nuxeo live-ingester audit poll |
 | `WAIT_EMBED_S` | no | `30` | Seconds to wait for the embedding pipeline after Alfresco sync |
 | `TOPK` | no | `30` | `topK` used for presence checks in search results |

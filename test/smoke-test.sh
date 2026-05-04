@@ -194,8 +194,15 @@ alf_sync_wait() {
   return 1
 }
 
-# NUX_WORKSPACE_CREATED=1 if the workspace was created by this run (must be deleted in cleanup)
+# NUX_WORKSPACE_CREATED=1 if the workspace was created by this run (must be deleted in cleanup).
+# A dedicated smoke workspace may also be deleted even if it pre-existed, so a
+# failed prior run does not leave content-lake-smoke behind forever.
 NUX_WORKSPACE_CREATED=0
+NUX_SMOKE_WORKSPACE_NAMES="content-lake-smoke"
+
+nux_should_delete_workspace() {
+  [ "$NUX_WORKSPACE_CREATED" = "1" ] || [[ " $NUX_SMOKE_WORKSPACE_NAMES " == *" ${NUXEO_WORKSPACE} "* ]]
+}
 
 # nux_ensure_workspace -- creates NUXEO_WORKSPACE under /default-domain/workspaces if missing.
 # Sets NUX_WORKSPACE_CREATED=1 when it creates the workspace so cleanup can remove it.
@@ -785,9 +792,10 @@ if [ "$NUX_USER_CREATED" = "1" ]; then
     || fail "G6: Failed to delete Nuxeo smoke-tester user (HTTP $code)"
 fi
 
-# Remove the Nuxeo workspace if this run created it.
+# Remove the Nuxeo workspace if this run created it, or if it is the dedicated
+# smoke workspace from the documented run command.
 # Pass ?hard=true so Nuxeo permanently deletes rather than moves to trash.
-if [ "$NUX_WORKSPACE_CREATED" = "1" ]; then
+if nux_should_delete_workspace; then
   ws_uid=$(curl -sf -u "$NUXEO_AUTH" \
     "$NUXEO_API/path/default-domain/workspaces/${NUXEO_WORKSPACE}" \
     2>/dev/null | jq -r '.uid // empty')
