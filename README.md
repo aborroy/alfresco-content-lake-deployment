@@ -400,6 +400,85 @@ make clean            # stop + remove all volumes [DESTRUCTIVE]
 
 You can also call `docker compose` directly; remember to add `--env-file .env.local` and `--profile <name>` explicitly.
 
+## Smoke Test
+
+`test/smoke-test.sh` is a self-contained end-to-end smoke test that runs against any live
+deployment -- local or EC2 -- without stopping services or touching existing data. The
+environment is left identical to its state before the test: every document, user, workspace,
+and log file created during the run is deleted before the script exits.
+
+### When to run it
+
+- **After deploying a new build** -- confirms the full ingest-to-search pipeline is intact.
+- **After any configuration change** -- credentials, compose overrides, nginx rules, etc.
+- **After an EC2 restart** -- verifies all services came back up healthy.
+- **Before a demo** -- quick sanity check that the stack is working end to end.
+
+### What it covers
+
+| Section | What is verified |
+|---|---|
+| A -- Service health | RAG service UP (embedding, hxpr, LLM sub-components), Alfresco responds, Nuxeo responds, unauthenticated request returns 401, sync API reachable |
+| B -- Alfresco batch ingest | Creates a folder + document, triggers `/api/sync/batch`, waits for sync completion and embedding, verifies the document appears in hybrid search |
+| C -- Nuxeo live ingest | Creates a Nuxeo document, waits for the audit-poll cycle, verifies it appears in hybrid search |
+| D -- Cross-source search | A single query returns results from both Alfresco and Nuxeo in one response |
+| E -- Apostrophe regression | Query containing `'` (e.g. "king arthur's legend") completes without a NXQL parse error |
+| F -- RAG prompt | `/api/rag/prompt` returns a non-empty LLM answer with source citations |
+| F2 -- Semantic search | `/api/rag/search/semantic` (vector-only path used by the demo app search panel) returns the Alfresco fixture |
+| F3 -- Source-type filter | `sourceType=alfresco` on hybrid search returns the Alfresco doc and excludes the Nuxeo doc |
+| F4 -- Streaming chat | `/api/rag/chat/stream` (SSE endpoint used by the demo chat UI) opens and emits data lines |
+| F5 -- Node status | `/api/content-lake/nodes/{id}/status` returns a `status` field (used by the ACA extension) |
+| G -- Cleanup + delete propagation | All created documents, users, and workspaces are deleted; Alfresco and Nuxeo docs disappear from search after deletion; log file is removed |
+
+### How to run
+
+All credentials must be supplied as environment variables -- no defaults are hardcoded.
+
+**Local stack:**
+
+```bash
+HOST=localhost \
+  ALF_AUTH=admin:admin \
+  NUXEO_AUTH=Administrator:Administrator \
+  NUXEO_PORT=8081 \
+  NUXEO_WORKSPACE=content-lake-smoke \
+  ./test/smoke-test.sh
+```
+
+**EC2 (or any remote host):**
+
+```bash
+HOST=axovia.alfdemo.com \
+  ALF_AUTH=admin:<alfresco-password> \
+  NUXEO_AUTH=Administrator:<nuxeo-password> \
+  ./test/smoke-test.sh
+```
+
+### Environment variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `ALF_AUTH` | yes | -- | Alfresco admin credentials (`user:password`) |
+| `NUXEO_AUTH` | yes | -- | Nuxeo admin credentials (`user:password`) |
+| `HOST` | no | `localhost` | Target hostname or IP |
+| `NUXEO_PORT` | no | `80` | Nuxeo port (80 = through nginx proxy; 8081 = direct, local only) |
+| `NUXEO_WORKSPACE` | no | `Policies` | Nuxeo workspace used for test documents -- created automatically if absent |
+| `WAIT_LIVE_S` | no | `60` | Seconds to wait for the Nuxeo live-ingester audit poll |
+| `WAIT_EMBED_S` | no | `30` | Seconds to wait for the embedding pipeline after Alfresco sync |
+| `TOPK` | no | `30` | `topK` used for presence checks in search results |
+
+### Expected output
+
+```
+  Passed : 28
+  Failed : 0
+```
+
+A non-zero `Failed` count means at least one pipeline stage is broken. The script writes a
+`smoke-test-<timestamp>.log` file during the run containing the full output including top-3
+search results for every failed assertion; this file is deleted at the end of a successful
+run. If the script is interrupted or exits with failures, the log file is kept for inspection.
+
 ## Deploying to AWS EC2
 
 See [docs/DEPLOY_EC2.md](docs/DEPLOY_EC2.md) for a step-by-step guide to running the full stack on a `g5.2xlarge` (8 vCPU / 32 GB RAM / NVIDIA A10G GPU, 24 GB VRAM) Ubuntu instance, including vLLM, TEI, and nginx proxy installation for GPU-accelerated inference.
