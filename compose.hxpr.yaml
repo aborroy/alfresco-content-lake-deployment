@@ -154,7 +154,7 @@ services:
       dockerfile: ./hxpr/Dockerfile
       args:
         HXPR_GIT_URL: ${HXPR_GIT_URL:-https://github.com/HylandSoftware/hxpr.git}
-        HXPR_GIT_REF: ${HXPR_GIT_REF:-feature/CIN-1509-CreateEmbeddingAPI}
+        HXPR_GIT_REF: ${HXPR_GIT_REF:-master}
         HXPR_GIT_SHA: ${HXPR_GIT_SHA:-}
       secrets:
         - source: hxpr_git_auth_token
