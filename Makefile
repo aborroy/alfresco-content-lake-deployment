@@ -12,6 +12,11 @@
 #   make config             Dry-run: render resolved compose configuration
 #   make clean              Stop + remove all volumes  [DESTRUCTIVE]
 #
+# Local development mode:
+#   Add 'local' as a parameter to use local sibling directories instead of git branches:
+#   make up-demo local      Uses ../content-lake-app, ../content-lake-app-ui, etc.
+#   make up-alfresco local  Build from local checkouts
+#
 # AI inference backend (both serve on host port 12434 — run only one at a time):
 #   Dev  — enable Docker Model Runner in Docker Desktop (no extra make target needed)
 #   Prod — make start-ai   Start TEI + vLLM stack (requires NVIDIA GPU / compose.ai.yaml)
@@ -20,6 +25,18 @@
 
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
+
+# Check if 'local' is passed as an argument
+ifneq (,$(filter local,$(MAKECMDGOALS)))
+  USE_LOCAL := 1
+  LOCAL_ENV_OVERRIDES := \
+    CONTENT_LAKE_GIT_CONTEXT=../content-lake-app \
+    CONTENT_LAKE_ACS_GIT_CONTEXT=../content-lake-app \
+    CONTENT_LAKE_UI_GIT_CONTEXT=../alfresco-content-lake-ui \
+    CONTENT_LAKE_APP_UI_CONTEXT=../content-lake-app-ui
+else
+  LOCAL_ENV_OVERRIDES :=
+endif
 
 LOAD_ENV := set -a && . ./.env && if [ -f ./.env.local ]; then . ./.env.local; fi && set +a &&
 
@@ -31,14 +48,20 @@ endif
 
 DC := $(LOAD_ENV) docker compose $(ENV_ARGS)
 
-.PHONY: help up-alfresco up-nuxeo up-full up-demo down logs ps config clean start-ai stop-ai
+.PHONY: help up-alfresco up-nuxeo up-full up-demo down logs ps config clean start-ai stop-ai local
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
+local: ## Placeholder target for 'local' parameter — use: make up-demo local
+	@:
+
 up-alfresco: ## Alfresco source — core services (~17)
-	$(LOAD_ENV) \
+ifdef USE_LOCAL
+	@echo "→ Building from local sibling directories (../content-lake-app, ../alfresco-content-lake-ui)..."
+endif
+	$(LOAD_ENV) $(LOCAL_ENV_OVERRIDES) \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) --profile alfresco up --build -d
@@ -47,7 +70,10 @@ up-alfresco: ## Alfresco source — core services (~17)
 up-nuxeo: ## Nuxeo source — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
-	$(LOAD_ENV) \
+ifdef USE_LOCAL
+	@echo "→ Building from local sibling directories (../content-lake-app)..."
+endif
+	$(LOAD_ENV) $(LOCAL_ENV_OVERRIDES) \
 	  NGINX_SYNC_DEFAULT_BACKEND=nuxeo-batch-ingester:9093 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /nuxeo/;" \
 	  docker compose $(ENV_ARGS) --profile nuxeo up --build -d
@@ -56,7 +82,10 @@ up-nuxeo: ## Nuxeo source — start ../nuxeo-deployment first, then this
 up-full: ## Alfresco + Nuxeo — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
-	$(LOAD_ENV) \
+ifdef USE_LOCAL
+	@echo "→ Building from local sibling directories (../content-lake-app, ../alfresco-content-lake-ui)..."
+endif
+	$(LOAD_ENV) $(LOCAL_ENV_OVERRIDES) \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) --profile full up --build -d
@@ -65,7 +94,10 @@ up-full: ## Alfresco + Nuxeo — start ../nuxeo-deployment first, then this
 up-demo: ## Full stack + demo UI at / — start ../nuxeo-deployment first, then this
 	@echo "→ Bringing up Nuxeo server (../nuxeo-deployment)..."
 	$(LOAD_ENV) docker compose -f ../nuxeo-deployment/compose.yaml up -d
-	$(LOAD_ENV) \
+ifdef USE_LOCAL
+	@echo "→ Building from local sibling directories (../content-lake-app, ../alfresco-content-lake-ui, ../content-lake-app-ui)..."
+endif
+	$(LOAD_ENV) $(LOCAL_ENV_OVERRIDES) \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="proxy_pass http://content-lake-app-ui:80;" \
 	  docker compose $(ENV_ARGS) --profile demo up --build -d
@@ -82,7 +114,7 @@ ps: ## Show running services and health status
 	$(DC) ps
 
 config: ## Dry-run: render the resolved compose configuration
-	$(LOAD_ENV) \
+	$(LOAD_ENV) $(LOCAL_ENV_OVERRIDES) \
 	  NGINX_SYNC_DEFAULT_BACKEND=batch-ingester:9090 \
 	  NGINX_ROOT_DIRECTIVE="return 302 /aca/;" \
 	  docker compose $(ENV_ARGS) config
