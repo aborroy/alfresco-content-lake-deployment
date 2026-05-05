@@ -338,6 +338,11 @@ code=$(curl -sf -o /dev/null -w '%{http_code}' -u "$ALF_AUTH" \
   && pass "A5: Sync API status endpoint healthy (HTTP 200)" \
   || fail "A5: Sync API status returned HTTP $code"
 
+code=$(curl -sf -o /dev/null -w '%{http_code}' "$BASE/" 2>/dev/null || echo 000)
+[ "$code" = "200" ] \
+  && pass "A6: Content Lake UI served (HTTP 200)" \
+  || fail "A6: Content Lake UI returned HTTP $code (Angular app may not be running)"
+
 # ══════════════════════════════════════════════════════════════════════════════
 ensure_shared_user
 
@@ -502,9 +507,49 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+section "F2b — Semantic Search with Source-type Filter"
+# ══════════════════════════════════════════════════════════════════════════════
+# The search panel's source selector passes sourceType to /api/rag/search/semantic.
+# Verify that the filter returns the correct source and excludes the other.
+
+if [ -n "${ALF_NODE_ID:-}" ] && [ -n "${NUX_UID:-}" ]; then
+  resp=$(curl -sf -u "$SMOKE_AUTH" -X POST "$RAG_URL/search/semantic" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"$SHARED_SENTINEL\",\"topK\":$TOPK,\"minScore\":0.0,\"sourceType\":\"alfresco\"}" \
+    2>/dev/null || echo '{}')
+  alf_found=$(echo "$resp" | jq --arg id "$ALF_NODE_ID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  nux_found=$(echo "$resp" | jq --arg id "$NUX_UID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  [ "${alf_found:-0}" -gt 0 ] \
+    && pass "F2b-1: semantic+sourceType=alfresco returns Alfresco smoke doc" \
+    || fail "F2b-1: semantic+sourceType=alfresco did NOT return Alfresco smoke doc"
+  [ "${nux_found:-0}" -eq 0 ] \
+    && pass "F2b-2: semantic+sourceType=alfresco correctly excludes Nuxeo smoke doc" \
+    || fail "F2b-2: semantic+sourceType=alfresco incorrectly returned Nuxeo smoke doc"
+
+  resp=$(curl -sf -u "$SMOKE_AUTH" -X POST "$RAG_URL/search/semantic" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"$SHARED_SENTINEL\",\"topK\":$TOPK,\"minScore\":0.0,\"sourceType\":\"nuxeo\"}" \
+    2>/dev/null || echo '{}')
+  nux_found=$(echo "$resp" | jq --arg id "$NUX_UID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  alf_found=$(echo "$resp" | jq --arg id "$ALF_NODE_ID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  [ "${nux_found:-0}" -gt 0 ] \
+    && pass "F2b-3: semantic+sourceType=nuxeo returns Nuxeo smoke doc" \
+    || fail "F2b-3: semantic+sourceType=nuxeo did NOT return Nuxeo smoke doc"
+  [ "${alf_found:-0}" -eq 0 ] \
+    && pass "F2b-4: semantic+sourceType=nuxeo correctly excludes Alfresco smoke doc" \
+    || fail "F2b-4: semantic+sourceType=nuxeo incorrectly returned Alfresco smoke doc"
+else
+  skip "F2b: Semantic search source-type filter skipped (one or both fixtures were not created)"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 section "F3 — Source-type Filter"
 # ══════════════════════════════════════════════════════════════════════════════
-# sourceType=alfresco narrows hybrid search to Alfresco only -- used by the
+# sourceType=alfresco and sourceType=nuxeo narrow hybrid search -- used by the
 # demo app's source selector toggle.
 
 if [ -n "${ALF_NODE_ID:-}" ] && [ -n "${NUX_UID:-}" ]; then
@@ -522,6 +567,21 @@ if [ -n "${ALF_NODE_ID:-}" ] && [ -n "${NUX_UID:-}" ]; then
   [ "${nux_found:-0}" -eq 0 ] \
     && pass "F3b: sourceType=alfresco filter correctly excludes Nuxeo smoke doc" \
     || fail "F3b: sourceType=alfresco filter incorrectly returned Nuxeo smoke doc"
+
+  resp=$(curl -sf -u "$SMOKE_AUTH" -X POST "$RAG_URL/search/hybrid" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":\"$SHARED_SENTINEL\",\"topK\":$TOPK,\"sourceType\":\"nuxeo\"}" \
+    2>/dev/null || echo '{}')
+  nux_found=$(echo "$resp" | jq --arg id "$NUX_UID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  alf_found=$(echo "$resp" | jq --arg id "$ALF_NODE_ID" \
+    '[.results[]? | select(.sourceDocument.nodeId == $id)] | length' 2>/dev/null || echo 0)
+  [ "${nux_found:-0}" -gt 0 ] \
+    && pass "F3c: sourceType=nuxeo filter returns Nuxeo smoke doc" \
+    || fail "F3c: sourceType=nuxeo filter did NOT return Nuxeo smoke doc"
+  [ "${alf_found:-0}" -eq 0 ] \
+    && pass "F3d: sourceType=nuxeo filter correctly excludes Alfresco smoke doc" \
+    || fail "F3d: sourceType=nuxeo filter incorrectly returned Alfresco smoke doc"
 else
   skip "F3: Source-type filter test skipped (one or both fixtures were not created)"
 fi
@@ -530,8 +590,11 @@ fi
 section "F4 — Streaming Chat"
 # ══════════════════════════════════════════════════════════════════════════════
 # POST /api/rag/chat/stream -- SSE endpoint used by the demo chat UI.
-# Asserts the stream opens and emits at least one SSE data line; does not
-# validate LLM answer quality.
+# Checks: stream opens, token events arrive, a done event is emitted,
+# accumulated answer is non-empty, no error event is emitted.
+# Also extracts sessionId for the multi-turn test in F6.
+
+CHAT_SESSION_ID=""
 
 if [ -n "${ALF_NODE_ID:-}" ]; then
   stream_out=$(curl -sf -u "$ALF_AUTH" --no-buffer -N --max-time 30 \
@@ -540,14 +603,92 @@ if [ -n "${ALF_NODE_ID:-}" ]; then
     -H 'Accept: text/event-stream' \
     -d "{\"question\":\"What is this smoke test document about? Phrase: $ALF_SENTINEL\",\"topK\":3}" \
     2>/dev/null || echo "")
+
   sse_lines=$(echo "$stream_out" | grep -c '^data:' 2>/dev/null || echo 0)
   if [ "${sse_lines:-0}" -gt 0 ]; then
-    pass "F4: Streaming chat emitted ${sse_lines} SSE data line(s)"
+    pass "F4a: Streaming chat emitted ${sse_lines} SSE data line(s)"
   else
-    fail "F4: Streaming chat returned no SSE data lines (stream may have failed or LLM is unreachable)"
+    fail "F4a: Streaming chat returned no SSE data lines (stream may have failed or LLM is unreachable)"
+  fi
+
+  # SSE format: "event:<type>\ndata:<json>\n\n" (no space after colon)
+  # Parse event type from "event:" lines, not from JSON payload.
+  done_lines=$(echo "$stream_out" | { grep -c '^event: *done' || true; })
+  [ "${done_lines:-0}" -gt 0 ] \
+    && pass "F4b: Stream emitted a 'done' event (stream terminated cleanly)" \
+    || fail "F4b: Stream did not emit a 'done' event (stream may have been cut short)"
+
+  error_lines=$(echo "$stream_out" | { grep -c '^event: *error' || true; })
+  [ "${error_lines:-0}" -eq 0 ] \
+    && pass "F4c: Stream emitted no error events" \
+    || fail "F4c: Stream emitted ${error_lines} error event(s)"
+
+  accumulated=$(echo "$stream_out" | awk '
+    /^event: *token/    { in_token=1; next }
+    /^event:/           { in_token=0; next }
+    /^data:/ && in_token { sub(/^data: */, ""); print }
+  ' | jq -r '.token // empty' 2>/dev/null | tr -d '\n' || echo "")
+  if [ -n "$accumulated" ]; then
+    pass "F4d: Accumulated answer is non-empty (${#accumulated} chars)"
+  else
+    fail "F4d: Accumulated answer is empty (no token events with text content)"
+  fi
+
+  CHAT_SESSION_ID=$(echo "$stream_out" | awk '
+    /^event: *metadata/ { in_meta=1; next }
+    /^event:/           { in_meta=0; next }
+    /^data:/ && in_meta { sub(/^data: */, ""); print; in_meta=0 }
+  ' | jq -r '.sessionId // empty' 2>/dev/null | head -1 || echo "")
+  if [ -n "$CHAT_SESSION_ID" ]; then
+    info "F4: sessionId=$CHAT_SESSION_ID (used in F6 multi-turn test)"
   fi
 else
   skip "F4: Streaming chat test skipped (Alfresco fixture was not created)"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "F6 — Multi-turn Chat Session"
+# ══════════════════════════════════════════════════════════════════════════════
+# Sends a second question reusing the sessionId from F4 to verify that the
+# backend's session-aware retrieval (conversation history in context) works.
+# The UI sends sessionId on every message after the first turn.
+
+if [ -n "${ALF_NODE_ID:-}" ] && [ -n "$CHAT_SESSION_ID" ]; then
+  stream_out2=$(curl -sf -u "$ALF_AUTH" --no-buffer -N --max-time 30 \
+    -X POST "$RAG_URL/chat/stream" \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: text/event-stream' \
+    -d "{\"question\":\"Summarise what you just told me in one sentence.\",\"topK\":3,\"sessionId\":\"$CHAT_SESSION_ID\"}" \
+    2>/dev/null || echo "")
+
+  sse_lines2=$(echo "$stream_out2" | grep -c '^data:' 2>/dev/null || echo 0)
+  if [ "${sse_lines2:-0}" -gt 0 ]; then
+    pass "F6a: Multi-turn second message emitted ${sse_lines2} SSE data line(s)"
+  else
+    fail "F6a: Multi-turn second message returned no SSE data lines"
+  fi
+
+  returned_session=$(echo "$stream_out2" | awk '
+    /^event: *metadata/ { in_meta=1; next }
+    /^event:/           { in_meta=0; next }
+    /^data:/ && in_meta { sub(/^data: */, ""); print; in_meta=0 }
+  ' | jq -r '.sessionId // empty' 2>/dev/null | head -1 || echo "")
+  if [ "${returned_session:-}" = "$CHAT_SESSION_ID" ]; then
+    pass "F6b: Second turn returned same sessionId (session continuity maintained)"
+  elif [ -n "$returned_session" ]; then
+    fail "F6b: Second turn returned a different sessionId (expected=$CHAT_SESSION_ID, got=$returned_session)"
+  else
+    skip "F6b: sessionId not present in second turn metadata (cannot verify continuity)"
+  fi
+
+  error_lines2=$(echo "$stream_out2" | { grep -c '^event: *error' || true; })
+  [ "${error_lines2:-0}" -eq 0 ] \
+    && pass "F6c: Multi-turn second message emitted no error events" \
+    || fail "F6c: Multi-turn second message emitted ${error_lines2} error event(s)"
+elif [ -n "${ALF_NODE_ID:-}" ]; then
+  skip "F6: Multi-turn chat skipped (no sessionId was returned by F4)"
+else
+  skip "F6: Multi-turn chat skipped (Alfresco fixture was not created)"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
