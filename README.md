@@ -96,7 +96,7 @@ flowchart LR
     Transform["transform-core-aio"]
   end
 
-  subgraph NUXEO["Nuxeo"]
+  subgraph NUXEO["Nuxeo (sibling stack)"]
     Nuxeo["nuxeo"]
     NuxeoDb["nuxeo-db"]
   end
@@ -125,8 +125,6 @@ flowchart LR
   Proxy --> Nuxeo
   Proxy --> Rag
 
-  ContentApp --> Alfresco
-  DemoUi --> Proxy
   ControlCenter --> Alfresco
   Alfresco --> Postgres
   Alfresco --> Solr
@@ -134,8 +132,11 @@ flowchart LR
   Alfresco --> Transform
   Solr --> Alfresco
 
+  OSD --> OpenSearch
+
   Nuxeo --> NuxeoDb
 
+  Batch --> ActiveMQ
   Batch --> Alfresco
   Batch --> Transform
   Batch --> Idp
@@ -160,6 +161,7 @@ flowchart LR
   NuxeoLive -.-> ModelRunner
 
   Rag --> Alfresco
+  Rag --> Nuxeo
   Rag --> Idp
   Rag --> HxprApp
   Rag -.-> ModelRunner
@@ -177,6 +179,7 @@ flowchart LR
   Rest --> Router
   Rest --> Localstack
   Rest --> Idp
+  Aio --> Rest
   Aio --> Localstack
 ```
 

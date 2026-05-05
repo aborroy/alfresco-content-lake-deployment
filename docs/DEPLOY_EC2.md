@@ -324,7 +324,142 @@ curl -s -X POST http://localhost:12434/v1/chat/completions \
 
 Both `grep` commands should print a match if the proxy is routing correctly.
 
-## 15. Build and Start the Main Stack
+## 15. Service Topology
+
+The EC2 deployment replaces Docker Model Runner with a GPU-accelerated AI inference stack
+(`compose.ai.yaml`). All other services are identical to the local deployment.
+
+```mermaid
+flowchart LR
+  Browser["Browser"]
+
+  subgraph AI["AI Inference  (compose.ai.yaml)"]
+    AiProxy["ai-proxy\n:12434"]
+    TEI["tei\nmxbai-embed-large-v1"]
+    VLLM["vllm\nQwen2.5-14B-Instruct-AWQ"]
+  end
+
+  subgraph ACL["content-lake-app"]
+    Proxy["proxy"]
+    ContentApp["content-app"]
+    DemoUi["content-lake-app-ui"]
+    Batch["alfresco-batch-ingester"]
+    Live["alfresco-live-ingester"]
+    NuxeoBatch["nuxeo-batch-ingester"]
+    NuxeoLive["nuxeo-live-ingester"]
+    Rag["rag-service"]
+  end
+
+  subgraph ACS["Alfresco"]
+    Alfresco["alfresco"]
+    ControlCenter["control-center"]
+    Solr["solr6"]
+    Postgres["postgres"]
+    ActiveMQ["activemq"]
+    Transform["transform-core-aio"]
+  end
+
+  subgraph NUXEO["Nuxeo (sibling stack)"]
+    Nuxeo["nuxeo"]
+    NuxeoDb["nuxeo-db"]
+  end
+
+  subgraph HXPR["hxpr"]
+    HxprApp["hxpr-app"]
+    Mongo["mongodb"]
+    OpenSearch["opensearch"]
+    OSD["opensearch-dashboards"]
+    Idp["idp"]
+    Localstack["localstack"]
+    Mockoon["mockoon"]
+    Aio["aio"]
+    Router["router"]
+    Rest["rest"]
+  end
+
+  AiProxy --> TEI
+  AiProxy --> VLLM
+
+  Browser --> Proxy
+
+  Proxy --> ContentApp
+  Proxy --> DemoUi
+  Proxy --> Alfresco
+  Proxy --> ControlCenter
+  Proxy --> Batch
+  Proxy --> NuxeoBatch
+  Proxy --> Nuxeo
+  Proxy --> Rag
+
+  ControlCenter --> Alfresco
+  Alfresco --> Postgres
+  Alfresco --> Solr
+  Alfresco --> ActiveMQ
+  Alfresco --> Transform
+  Solr --> Alfresco
+
+  OSD --> OpenSearch
+
+  Nuxeo --> NuxeoDb
+
+  Batch --> ActiveMQ
+  Batch --> Alfresco
+  Batch --> Transform
+  Batch --> Idp
+  Batch --> HxprApp
+  Batch -.-> AiProxy
+
+  Live --> ActiveMQ
+  Live --> Alfresco
+  Live --> Transform
+  Live --> Idp
+  Live --> HxprApp
+  Live -.-> AiProxy
+
+  NuxeoBatch --> Nuxeo
+  NuxeoBatch --> Idp
+  NuxeoBatch --> HxprApp
+  NuxeoBatch -.-> AiProxy
+
+  NuxeoLive --> Nuxeo
+  NuxeoLive --> Idp
+  NuxeoLive --> HxprApp
+  NuxeoLive -.-> AiProxy
+
+  Rag --> Alfresco
+  Rag --> Nuxeo
+  Rag --> Idp
+  Rag --> HxprApp
+  Rag -.-> AiProxy
+
+  HxprApp --> Mongo
+  HxprApp --> OpenSearch
+  HxprApp --> Idp
+  HxprApp --> Localstack
+  HxprApp --> Mockoon
+  HxprApp --> Router
+  HxprApp --> Rest
+
+  Router --> Aio
+  Router --> Localstack
+  Rest --> Router
+  Rest --> Localstack
+  Rest --> Idp
+  Aio --> Rest
+  Aio --> Localstack
+```
+
+Notes:
+
+- `ai-proxy` (nginx) routes `/v1/embeddings` to `tei` and all other `/v1/*` requests to `vllm`.
+- Dotted lines cross the Docker network boundary via `host.docker.internal:12434` -- the same URL
+  Docker Model Runner uses locally, so no compose file changes are needed.
+- The `AI` subgraph runs on the isolated `ai` network (`compose.ai.yaml`); the main stack runs on
+  the `stack` network. They are connected only through the host's `12434` port.
+- `compose.ai.yaml` must be fully started (vLLM logs `Application startup complete`) before
+  running `make up`.
+
+## 16. Build and Start the Main Stack
 
 The initial build compiles several Java projects from source; it will take several minutes.
 
@@ -332,7 +467,7 @@ The initial build compiles several Java projects from source; it will take sever
 make up
 ```
 
-## 16. Monitor Startup
+## 17. Monitor Startup
 
 ```bash
 make ps
@@ -341,7 +476,7 @@ make logs
 
 `hxpr-app` has a 120-second start period; expect the stack to take 3--5 minutes to stabilise.
 
-## 17. Public Endpoints
+## 18. Public Endpoints
 
 Replace `<EC2_PUBLIC_IP_OR_DOMAIN>` with your instance's IP or domain name.
 
@@ -353,7 +488,7 @@ Replace `<EC2_PUBLIC_IP_OR_DOMAIN>` with your instance's IP or domain name.
 | `http://<EC2_PUBLIC_IP_OR_DOMAIN>/admin/` | Alfresco Control Center |
 | `http://<EC2_PUBLIC_IP_OR_DOMAIN>/api/rag/` | RAG Service |
 
-## 18. Day-to-Day Commands
+## 19. Day-to-Day Commands
 
 ```bash
 # Main stack
@@ -370,12 +505,12 @@ docker compose -f compose.ai.yaml logs -f  # tail AI inference logs
 docker compose -f compose.ai.yaml ps       # status
 ```
 
-## 19. Saving Costs
+## 20. Saving Costs
 
 - Stop the EC2 instance when not in use; you are only charged for storage while stopped (~$0.10/GB/month for gp3).
 - EBS volumes persist across stops, so Alfresco data, Solr index, MongoDB, and cached model weights in `/opt/models` are all retained.
 
-## 20. Downgrading to a Smaller LLM
+## 21. Downgrading to a Smaller LLM
 
 If you need to free VRAM (e.g. for additional workloads) you can switch to the 7B model, which
 uses ~13 GB at `--gpu-memory-utilization 0.55` and leaves ~10 GB headroom.
